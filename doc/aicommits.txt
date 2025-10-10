@@ -1,0 +1,369 @@
+*aicommits.txt*           AI-powered git commit messages for Neovim
+
+==============================================================================
+Table of Contents                                    *aicommits* *aicommits-toc*
+
+1. Introduction ............................ |aicommits-introduction|
+2. Requirements ............................ |aicommits-requirements|
+3. Installation ............................ |aicommits-installation|
+4. Setup ................................... |aicommits-setup|
+5. Commands ................................ |aicommits-commands|
+6. Configuration ........................... |aicommits-configuration|
+7. Usage ................................... |aicommits-usage|
+8. Integrations ............................ |aicommits-integrations|
+9. Troubleshooting ......................... |aicommits-troubleshooting|
+10. License ................................ |aicommits-license|
+
+==============================================================================
+1. Introduction                                      *aicommits-introduction*
+
+aicommits.nvim is a Neovim plugin that generates conventional commit messages
+using AI. Stage your changes, run |:AICommit|, and get a properly formatted
+commit message. It's that simple.
+
+All commits follow the Conventional Commits specification with types like
+`feat`, `fix`, `docs`, `refactor`, and more.
+
+==============================================================================
+2. Requirements                                      *aicommits-requirements*
+
+- Neovim 0.9+
+- Git
+- OpenAI API key
+- curl
+
+==============================================================================
+3. Installation                                      *aicommits-installation*
+
+Using lazy.nvim (minimal setup):
+>lua
+    {
+      "pilo404/aicommits.nvim",
+      config = true,
+    }
+<
+
+With custom configuration:
+>lua
+    {
+      "pilo404/aicommits.nvim",
+      config = function()
+        require("aicommits").setup({
+          model = "gpt-4.1-nano",
+          max_length = 50,
+          generate = 1,
+        })
+      end,
+    }
+<
+
+Using packer.nvim:
+>lua
+    use {
+      "pilo404/aicommits.nvim",
+      config = function()
+        require("aicommits").setup()
+      end
+    }
+<
+
+Using vim-plug:
+>vim
+    Plug 'pilo404/aicommits.nvim'
+
+    lua << EOF
+    require("aicommits").setup()
+    EOF
+<
+
+==============================================================================
+4. Setup                                                  *aicommits-setup*
+
+Set your OpenAI API key using one of these environment variables:
+>bash
+    export AICOMMITS_NVIM_OPENAI_API_KEY="sk-..."
+<
+
+Or use the standard OpenAI environment variable:
+>bash
+    export OPENAI_API_KEY="sk-..."
+<
+
+Add the export to your shell configuration file (`~/.bashrc`, `~/.zshrc`,
+etc.) and restart your shell.
+
+==============================================================================
+5. Commands                                              *aicommits-commands*
+
+                                                              *:AICommit*
+:AICommit                   Generate and create a commit message.
+                            This command:
+                            1. Analyzes your staged changes
+                            2. Generates commit message(s)
+                            3. Shows a picker to choose from
+                            4. Creates the commit
+
+                                                         *:AICommitHealth*
+:AICommitHealth             Check if everything is set up correctly.
+                            Verifies:
+                            - OpenAI API key is configured
+                            - Git repository is detected
+                            - curl is available
+
+                                                          *:AICommitDebug*
+:AICommitDebug              Show debug information.
+                            Displays current configuration and
+                            environment details.
+
+==============================================================================
+6. Configuration                                    *aicommits-configuration*
+
+All options with their defaults:
+>lua
+    require("aicommits").setup({
+      -- OpenAI settings
+      model = "gpt-4.1-nano",       -- Which model to use
+      max_length = 50,              -- Max characters in commit message
+      generate = 1,                  -- Number of options (1-5)
+
+      -- UI settings
+      ui = {
+        use_custom_picker = true,  -- Custom picker vs vim.ui.select
+        picker = {
+          width = 0.4,             -- Percentage of screen width
+          height = 0.3,            -- Percentage of screen height
+          border = "rounded",      -- Border style
+        },
+      },
+
+      -- Integrations
+      integrations = {
+        neogit = {
+          enabled = true,          -- Auto-refresh after commit
+          mappings = {
+            enabled = true,        -- Add keymap in status buffer
+            key = "C",            -- Which key to use
+          },
+        },
+      },
+
+      -- Debugging
+      debug = false,
+    })
+<
+
+                                                      *aicommits-config-model*
+model ~
+    Type: `string`
+    Default: `"gpt-4.1-nano"`
+
+    Which OpenAI model to use for generating commit messages.
+    Examples: "gpt-4.1-nano", "gpt-4", "gpt-3.5-turbo"
+
+                                                 *aicommits-config-max_length*
+max_length ~
+    Type: `number`
+    Default: `50`
+
+    Maximum number of characters in the commit message.
+    Recommended: 50-72 characters for good Git practices.
+
+                                                   *aicommits-config-generate*
+generate ~
+    Type: `number`
+    Default: `1`
+
+    Number of commit message options to generate (1-5).
+    If set to 1, the commit is created immediately.
+    If > 1, a picker is shown to choose from multiple options.
+
+                                                         *aicommits-config-ui*
+ui ~
+    Type: `table`
+
+    UI configuration options.
+
+    use_custom_picker: Use the custom floating picker (true) or
+                      vim.ui.select (false)
+    picker.width: Percentage of screen width (0.0-1.0)
+    picker.height: Percentage of screen height (0.0-1.0)
+    picker.border: Border style ("single", "double", "rounded", etc.)
+
+                                              *aicommits-config-integrations*
+integrations ~
+    Type: `table`
+
+    Configuration for plugin integrations.
+
+    neogit.enabled: Enable Neogit integration
+    neogit.mappings.enabled: Add keymap in Neogit status buffer
+    neogit.mappings.key: Which key to map (default: "C")
+
+                                                      *aicommits-config-debug*
+debug ~
+    Type: `boolean`
+    Default: `false`
+
+    Enable debug mode to see detailed logging.
+
+==============================================================================
+7. Usage                                                  *aicommits-usage*
+
+Basic workflow:
+>bash
+    # Stage your changes
+    git add .
+<
+
+Then in Neovim:
+>vim
+    :AICommit
+<
+
+The plugin will:
+1. Analyze your staged changes using git diff
+2. Send the diff to OpenAI API
+3. Generate commit message(s) following Conventional Commits
+4. Show a picker (if generating > 1 option)
+5. Create the commit with your selected message
+
+                                                    *aicommits-commit-format*
+Commit Message Format ~
+
+All commits follow Conventional Commits:
+>
+    <type>(<scope>): <description>
+<
+
+Types:
+- `feat`      New feature
+- `fix`       Bug fix
+- `docs`      Documentation only
+- `style`     Code style/formatting (no code change)
+- `refactor`  Code restructuring
+- `perf`      Performance improvement
+- `test`      Adding/updating tests
+- `build`     Build system changes
+- `ci`        CI configuration changes
+- `chore`     Other changes
+
+Examples:
+>
+    feat(auth): add OAuth2 support
+    fix(api): handle null responses
+    docs: update installation steps
+    refactor(core): simplify error handling
+<
+
+==============================================================================
+8. Integrations                                      *aicommits-integrations*
+
+                                                    *aicommits-neogit*
+Neogit ~
+
+If you use Neogit, aicommits.nvim integrates seamlessly:
+
+- Press `C` in the Neogit status buffer to trigger AI commits
+- The plugin auto-refreshes Neogit after committing
+- Fully configurable through |aicommits-config-integrations|
+
+To disable Neogit integration:
+>lua
+    require("aicommits").setup({
+      integrations = {
+        neogit = { enabled = false },
+      },
+    })
+<
+
+==============================================================================
+9. Troubleshooting                                *aicommits-troubleshooting*
+
+"OpenAI API key not found" ~
+
+Set the environment variable and restart Neovim:
+>bash
+    export AICOMMITS_NVIM_OPENAI_API_KEY="sk-..."
+<
+
+Or:
+>bash
+    export OPENAI_API_KEY="sk-..."
+<
+
+Add to your shell config and restart your shell.
+
+"No staged changes found" ~
+
+Make sure you have staged changes:
+>bash
+    git add <files>
+<
+
+You can check staged changes with:
+>bash
+    git status
+<
+
+"Not in a git repository" ~
+
+Navigate to a git repository or initialize one:
+>bash
+    cd /path/to/your/repo
+    # or
+    git init
+<
+
+"curl not found" or "HTTP request failed" ~
+
+Ensure curl is installed:
+>bash
+    # macOS
+    brew install curl
+
+    # Ubuntu/Debian
+    sudo apt-get install curl
+
+    # Arch
+    sudo pacman -S curl
+<
+
+Health Check ~
+
+Run the health check to verify your setup:
+>vim
+    :AICommitHealth
+<
+
+This will check:
+- OpenAI API key configuration
+- Git repository detection
+- curl availability
+- Plugin configuration validity
+
+Debug Mode ~
+
+Enable debug mode for detailed logging:
+>lua
+    require("aicommits").setup({
+      debug = true,
+    })
+<
+
+Then run:
+>vim
+    :AICommitDebug
+<
+
+==============================================================================
+10. License                                              *aicommits-license*
+
+MIT License
+
+Copyright (c) 2025 404pilo
+
+For the full license text, see:
+https://github.com/pilo404/aicommits.nvim/blob/main/LICENSE
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

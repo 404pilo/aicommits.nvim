@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test on Neovim ${{ matrix.nvim }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        nvim: ["v0.9.5", "v0.10.0", "stable", "nightly"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: ${{ matrix.nvim }}
+
+      - name: Setup dependencies
+        run: ./app.sh setup
+
+      - name: Run tests
+        run: ./app.sh test
+
+  lint:
+    name: Stylua Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stylua
+        uses: JohnnyMorganz/stylua-action@v3
+        with:
+          version: latest
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --check lua/ tests/

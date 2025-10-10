@@ -1,0 +1,30 @@
+# Neovim
+*.swp
+*.swo
+*~
+.netrwhist
+
+# Lua
+luac.out
+
+# macOS
+.DS_Store
+
+# Testing
+.luacov
+*.log
+
+# Documentation tags
+doc/tags
+
+# Development
+.vscode/
+.idea/
+*.iml
+
+# Memory Bank (keep local only)
+memory-bank/
+
+# Temporary cleanup files
+.mailmap
+pre-cleanup-*.txt
