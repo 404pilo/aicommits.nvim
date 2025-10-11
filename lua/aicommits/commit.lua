@@ -2,7 +2,7 @@
 local M = {}
 
 local git = require("aicommits.git")
-local openai = require("aicommits.openai")
+local provider_manager = require("aicommits.providers")
 local ui = require("aicommits.ui")
 local picker = require("aicommits.ui.picker")
 local utils = require("aicommits.utils")
@@ -15,7 +15,14 @@ function M.generate_and_commit()
     return
   end
 
-  -- Step 2: Get staged diff
+  -- Step 2: Get active provider
+  local provider, provider_err = provider_manager.get_active_provider()
+  if not provider then
+    utils.notify_error(provider_err or "Failed to get active provider")
+    return
+  end
+
+  -- Step 3: Get staged diff
   picker.show_status("Detecting staged files...")
 
   git.get_staged_diff(function(err, diff_data)
@@ -36,12 +43,15 @@ function M.generate_and_commit()
     local file_word = file_count == 1 and "file" or "files"
     picker.show_status(string.format("Detected %d staged %s", file_count, file_word))
 
-    -- Step 3: Generate commit message via OpenAI
+    -- Step 4: Generate commit message via provider
     vim.defer_fn(function()
       picker.show_status("The AI is analyzing your changes...")
     end, 500)
 
-    openai.generate_commit_message(diff_data.diff, function(err, messages)
+    local config = require("aicommits.config")
+    local provider_config = config.get("providers." .. provider.name)
+
+    provider:generate_commit_message(diff_data.diff, provider_config, function(err, messages)
       if err then
         picker.close_status()
         utils.notify_error(err)
@@ -54,7 +64,7 @@ function M.generate_and_commit()
         return
       end
 
-      -- Step 4: Show user selection UI (status window auto-closes)
+      -- Step 5: Show user selection UI (status window auto-closes)
       ui.show_commit_prompt(
         messages,
         -- On confirm: create commit
@@ -68,7 +78,7 @@ function M.generate_and_commit()
               return
             end
 
-            -- Step 5: Success - refresh git clients
+            -- Step 6: Success - refresh git clients
             picker.show_status("Successfully committed!")
             git.refresh_git_clients()
 

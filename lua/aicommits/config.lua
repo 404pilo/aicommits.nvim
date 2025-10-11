@@ -6,10 +6,33 @@ local config = {}
 
 -- Default configuration schema
 M.defaults = {
-  -- OpenAI API Configuration
-  model = "gpt-4.1-nano", -- OpenAI model to use
-  max_length = 50, -- Maximum commit message length
-  generate = 1, -- Number of commit message options to generate (1-5)
+  -- Provider Configuration
+  active_provider = "openai", -- Which provider to use for generating commit messages
+
+  providers = {
+    -- OpenAI Configuration
+    openai = {
+      enabled = true, -- Enable/disable this provider
+      api_key = nil, -- API key (nil = use environment variables)
+      endpoint = nil, -- API endpoint (nil = use default: https://api.openai.com/v1/chat/completions)
+      model = "gpt-4.1-nano", -- OpenAI model to use
+      max_length = 50, -- Maximum commit message length
+      generate = 1, -- Number of commit message options to generate (1-5)
+      -- Advanced OpenAI options
+      temperature = 0.7, -- Sampling temperature (0-2)
+      top_p = 1, -- Nucleus sampling parameter
+      frequency_penalty = 0, -- Frequency penalty (-2 to 2)
+      presence_penalty = 0, -- Presence penalty (-2 to 2)
+      max_tokens = 200, -- Maximum tokens in response
+    },
+    -- Future providers can be added here:
+    -- anthropic = {
+    --   enabled = false,
+    --   api_key = nil,
+    --   model = "claude-3-5-sonnet-20241022",
+    --   max_tokens = 200,
+    -- },
+  },
 
   -- UI Configuration
   ui = {
@@ -39,18 +62,6 @@ M.defaults = {
 -- Setup configuration by merging user options with defaults
 function M.setup(user_opts)
   user_opts = user_opts or {}
-
-  -- Backward compatibility: convert boolean neogit to nested config
-  if user_opts.integrations and type(user_opts.integrations.neogit) == "boolean" then
-    local enabled = user_opts.integrations.neogit
-    user_opts.integrations.neogit = {
-      enabled = enabled,
-      mappings = {
-        enabled = enabled,
-        key = "C",
-      },
-    }
-  end
 
   config = vim.tbl_deep_extend("force", M.defaults, user_opts)
   return config
@@ -84,19 +95,23 @@ end
 function M.validate()
   local errors = {}
 
-  -- Validate model
-  if type(config.model) ~= "string" or config.model == "" then
-    table.insert(errors, "model must be a non-empty string")
+  -- Validate active_provider
+  if not config.active_provider or config.active_provider == "" then
+    table.insert(errors, "active_provider must be set")
   end
 
-  -- Validate max_length
-  if type(config.max_length) ~= "number" or config.max_length <= 0 then
-    table.insert(errors, "max_length must be a positive number")
+  -- Validate provider exists in configuration
+  if config.active_provider and not config.providers then
+    table.insert(errors, "providers table is missing")
   end
 
-  -- Validate generate
-  if type(config.generate) ~= "number" or config.generate < 1 or config.generate > 5 then
-    table.insert(errors, "generate must be a number between 1 and 5")
+  if config.active_provider and config.providers then
+    local provider_config = config.providers[config.active_provider]
+    if not provider_config then
+      table.insert(errors, string.format("No configuration found for provider '%s'", config.active_provider))
+    elseif provider_config.enabled == false then
+      table.insert(errors, string.format("Provider '%s' is disabled", config.active_provider))
+    end
   end
 
   return #errors == 0, errors

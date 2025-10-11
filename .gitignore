@@ -28,3 +28,4 @@ memory-bank/
 # Temporary cleanup files
 .mailmap
 pre-cleanup-*.txt
+.claude

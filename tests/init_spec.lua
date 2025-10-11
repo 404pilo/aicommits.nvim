@@ -103,25 +103,33 @@ describe("init", function()
     it("passes options to config module", function()
       local config = require("aicommits.config")
       aicommits.setup({
-        model = "gpt-4-turbo",
+        providers = {
+          openai = {
+            model = "gpt-4-turbo",
+          },
+        },
       })
 
-      local model = config.get("model")
+      local model = config.get("providers.openai.model")
       assert.equals("gpt-4-turbo", model)
     end)
 
     it("merges with default configuration", function()
       local config = require("aicommits.config")
       aicommits.setup({
-        max_length = 100,
+        providers = {
+          openai = {
+            max_length = 100,
+          },
+        },
       })
 
       -- Should merge with defaults, not replace
-      local model = config.get("model")
+      local model = config.get("providers.openai.model")
       assert.is_not_nil(model)
       assert.equals("gpt-4.1-nano", model) -- Default model
 
-      local max_length = config.get("max_length")
+      local max_length = config.get("providers.openai.max_length")
       assert.equals(100, max_length)
     end)
 

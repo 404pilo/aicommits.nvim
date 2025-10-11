@@ -25,8 +25,12 @@ describe("integration", function()
     it("complete initialization sequence works", function()
       -- Step 1: Setup plugin
       local ok = pcall(aicommits.setup, {
-        model = "gpt-4",
-        generate = 3,
+        providers = {
+          openai = {
+            model = "gpt-4",
+            generate = 3,
+          },
+        },
       })
       assert.is_true(ok)
 
@@ -40,17 +44,21 @@ describe("integration", function()
 
     it("config merges correctly with defaults", function()
       aicommits.setup({
-        model = "gpt-4-turbo",
-        max_length = 100,
+        providers = {
+          openai = {
+            model = "gpt-4-turbo",
+            max_length = 100,
+          },
+        },
       })
 
       -- Custom values should be set
-      assert.equals("gpt-4-turbo", config.get("model"))
-      assert.equals(100, config.get("max_length"))
+      assert.equals("gpt-4-turbo", config.get("providers.openai.model"))
+      assert.equals(100, config.get("providers.openai.max_length"))
 
       -- Defaults should still exist for non-specified options
-      assert.is_not_nil(config.get("generate"))
-      assert.equals(1, config.get("generate")) -- Default value
+      assert.is_not_nil(config.get("providers.openai.generate"))
+      assert.equals(1, config.get("providers.openai.generate")) -- Default value
     end)
   end)
 
@@ -102,9 +110,13 @@ describe("integration", function()
     it("handles custom configuration end-to-end", function()
       -- Setup with custom config
       aicommits.setup({
-        model = "gpt-4-turbo",
-        max_length = 72,
-        generate = 5,
+        providers = {
+          openai = {
+            model = "gpt-4-turbo",
+            max_length = 72,
+            generate = 5,
+          },
+        },
         ui = {
           use_custom_picker = true,
           picker = {
@@ -125,9 +137,9 @@ describe("integration", function()
       })
 
       -- Verify all custom values
-      assert.equals("gpt-4-turbo", config.get("model"))
-      assert.equals(72, config.get("max_length"))
-      assert.equals(5, config.get("generate"))
+      assert.equals("gpt-4-turbo", config.get("providers.openai.model"))
+      assert.equals(72, config.get("providers.openai.max_length"))
+      assert.equals(5, config.get("providers.openai.generate"))
       assert.equals(0.8, config.get("ui.picker.width"))
       assert.equals(0.5, config.get("ui.picker.height"))
       assert.equals("double", config.get("ui.picker.border"))
@@ -174,8 +186,7 @@ describe("integration", function()
 
     it("handles invalid configuration gracefully", function()
       local ok = pcall(aicommits.setup, {
-        model = "", -- Invalid
-        generate = 10, -- Out of range
+        active_provider = "nonexistent",
       })
       -- Setup should not crash but validation will fail
       assert.is_true(ok)
@@ -197,7 +208,8 @@ describe("integration", function()
         "aicommits.notifications",
         "aicommits.health",
         "aicommits.commands",
-        "aicommits.openai",
+        "aicommits.providers",
+        "aicommits.providers.openai",
         "aicommits.commit",
       }
 
@@ -225,14 +237,18 @@ describe("integration", function()
     it("initialization -> configuration -> command registration", function()
       -- Phase 1: Initialize
       aicommits.setup({
-        model = "gpt-4",
-        max_length = 72,
+        providers = {
+          openai = {
+            model = "gpt-4",
+            max_length = 72,
+          },
+        },
       })
       assert.is_true(aicommits.is_initialized())
 
       -- Phase 2: Verify config
-      assert.equals("gpt-4", config.get("model"))
-      assert.equals(72, config.get("max_length"))
+      assert.equals("gpt-4", config.get("providers.openai.model"))
+      assert.equals(72, config.get("providers.openai.max_length"))
 
       -- Phase 3: Register commands
       commands.setup()

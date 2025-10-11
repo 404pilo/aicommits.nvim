@@ -37,9 +37,13 @@ With custom config:
   "pilo404/aicommits.nvim",
   config = function()
     require("aicommits").setup({
-      model = "gpt-4.1-nano",
-      max_length = 50,
-      generate = 1,
+      providers = {
+        openai = {
+          model = "gpt-4",
+          max_length = 72,
+          generate = 3,
+        },
+      },
     })
   end,
 }
@@ -110,10 +114,29 @@ All options with defaults:
 
 ```lua
 require("aicommits").setup({
-  -- OpenAI settings
-  model = "gpt-4.1-nano",       -- Which model to use
-  max_length = 50,              -- Max characters in commit message
-  generate = 1,                  -- Number of options (1-5)
+  -- Provider Configuration
+  active_provider = "openai",  -- Which AI provider to use
+
+  providers = {
+    -- OpenAI Configuration
+    openai = {
+      enabled = true,          -- Enable/disable this provider
+      api_key = nil,           -- API key (nil = use environment variables)
+      endpoint = nil,          -- Custom endpoint (nil = use default)
+      model = "gpt-4.1-nano",  -- Which model to use
+      max_length = 50,         -- Max characters in commit message
+      generate = 1,            -- Number of options (1-5)
+      -- Advanced options
+      temperature = 0.7,       -- Sampling temperature (0-2)
+      top_p = 1,              -- Nucleus sampling parameter
+      frequency_penalty = 0,   -- Frequency penalty (-2 to 2)
+      presence_penalty = 0,    -- Presence penalty (-2 to 2)
+      max_tokens = 200,        -- Maximum tokens in response
+    },
+    -- Future providers can be added here
+    -- anthropic = { ... },
+    -- ollama = { ... },
+  },
 
   -- UI settings
   ui = {
@@ -141,24 +164,40 @@ require("aicommits").setup({
 })
 ```
 
-### Examples
+### Provider Configuration
 
-**Generate multiple options:**
+The plugin uses a provider system to support multiple AI services. Each provider has its own configuration section under `providers`.
+
+**Configure OpenAI with custom settings:**
 ```lua
 require("aicommits").setup({
-  generate = 3,  -- Pick from 3 messages
+  active_provider = "openai",
+  providers = {
+    openai = {
+      model = "gpt-4",      -- Use a different model
+      max_length = 72,      -- Longer commit messages
+      generate = 3,         -- Generate 3 options to choose from
+    },
+  },
 })
 ```
 
-**Use a different model:**
+**Use a custom OpenAI-compatible endpoint:**
 ```lua
 require("aicommits").setup({
-  model = "gpt-4",
-  max_length = 72,
+  providers = {
+    openai = {
+      endpoint = "https://your-proxy.com/v1/chat/completions",
+      api_key = "your-api-key",  -- Or use environment variables
+      model = "gpt-4",
+    },
+  },
 })
 ```
 
-**Use vim.ui.select instead:**
+### UI Configuration
+
+**Use vim.ui.select instead of custom picker:**
 ```lua
 require("aicommits").setup({
   ui = {
@@ -166,6 +205,8 @@ require("aicommits").setup({
   },
 })
 ```
+
+### Integration Configuration
 
 **Disable Neogit integration:**
 ```lua
