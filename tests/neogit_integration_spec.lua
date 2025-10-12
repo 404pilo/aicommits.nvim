@@ -34,12 +34,8 @@ describe("neogit integration", function()
       assert.equals("C", neogit_config.mappings.key)
     end)
 
-    it("handles boolean true (backward compatibility)", function()
-      config.setup({
-        integrations = {
-          neogit = true,
-        },
-      })
+    it("merges with default neogit configuration", function()
+      config.setup({})
 
       local neogit_config = config.get("integrations.neogit")
       assert.is_not_nil(neogit_config)
@@ -48,17 +44,18 @@ describe("neogit integration", function()
       assert.equals("C", neogit_config.mappings.key)
     end)
 
-    it("handles boolean false (backward compatibility)", function()
+    it("allows disabling neogit integration", function()
       config.setup({
         integrations = {
-          neogit = false,
+          neogit = {
+            enabled = false,
+          },
         },
       })
 
       local neogit_config = config.get("integrations.neogit")
       assert.is_not_nil(neogit_config)
       assert.is_false(neogit_config.enabled)
-      assert.is_false(neogit_config.mappings.enabled)
     end)
 
     it("allows custom key binding", function()

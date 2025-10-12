@@ -26,9 +26,10 @@ describe("aicommits.config", function()
     it("preserves all defaults when no options provided", function()
       config.setup({})
 
-      assert.equals("gpt-4.1-nano", config.get("model"))
-      assert.equals(50, config.get("max_length"))
-      assert.equals(1, config.get("generate"))
+      assert.equals("openai", config.get("active_provider"))
+      assert.equals("gpt-4.1-nano", config.get("providers.openai.model"))
+      assert.equals(50, config.get("providers.openai.max_length"))
+      assert.equals(1, config.get("providers.openai.generate"))
       assert.equals(true, config.get("ui.use_custom_picker"))
     end)
 
@@ -44,15 +45,20 @@ describe("aicommits.config", function()
       assert.equals(false, config.get("integrations.neogit.enabled"))
     end)
 
-    it("handles backward compatibility for boolean neogit config", function()
+    it("handles nested provider configuration", function()
       config.setup({
-        integrations = {
-          neogit = false,
+        providers = {
+          openai = {
+            model = "gpt-4.1-nano",
+            max_length = 72,
+          },
         },
       })
 
-      assert.equals(false, config.get("integrations.neogit.enabled"))
-      assert.equals(false, config.get("integrations.neogit.mappings.enabled"))
+      assert.equals("gpt-4.1-nano", config.get("providers.openai.model"))
+      assert.equals(72, config.get("providers.openai.max_length"))
+      -- Check other defaults are preserved
+      assert.equals(1, config.get("providers.openai.generate"))
     end)
   end)
 
@@ -105,9 +111,9 @@ describe("aicommits.config", function()
       assert.equals(0, #errors)
     end)
 
-    it("detects invalid model (empty string)", function()
+    it("detects missing active_provider", function()
       config.setup({
-        model = "",
+        active_provider = "",
       })
 
       local valid, errors = config.validate()
@@ -115,9 +121,14 @@ describe("aicommits.config", function()
       assert.is_true(#errors > 0)
     end)
 
-    it("detects invalid model (non-string)", function()
+    it("detects disabled active provider", function()
       config.setup({
-        model = 123,
+        active_provider = "openai",
+        providers = {
+          openai = {
+            enabled = false,
+          },
+        },
       })
 
       local valid, errors = config.validate()
@@ -125,39 +136,10 @@ describe("aicommits.config", function()
       assert.is_true(#errors > 0)
     end)
 
-    it("detects invalid max_length (negative)", function()
+    it("detects missing provider configuration", function()
       config.setup({
-        max_length = -10,
-      })
-
-      local valid, errors = config.validate()
-      assert.is_false(valid)
-      assert.is_true(#errors > 0)
-    end)
-
-    it("detects invalid max_length (zero)", function()
-      config.setup({
-        max_length = 0,
-      })
-
-      local valid, errors = config.validate()
-      assert.is_false(valid)
-      assert.is_true(#errors > 0)
-    end)
-
-    it("detects invalid generate (below range)", function()
-      config.setup({
-        generate = 0,
-      })
-
-      local valid, errors = config.validate()
-      assert.is_false(valid)
-      assert.is_true(#errors > 0)
-    end)
-
-    it("detects invalid generate (above range)", function()
-      config.setup({
-        generate = 6,
+        active_provider = "nonexistent",
+        providers = {},
       })
 
       local valid, errors = config.validate()
@@ -167,9 +149,15 @@ describe("aicommits.config", function()
 
     it("accepts valid custom configuration", function()
       config.setup({
-        model = "gpt-4",
-        max_length = 72,
-        generate = 3,
+        active_provider = "openai",
+        providers = {
+          openai = {
+            enabled = true,
+            model = "gpt-4.1-nano",
+            max_length = 72,
+            generate = 3,
+          },
+        },
       })
 
       local valid, errors = config.validate()

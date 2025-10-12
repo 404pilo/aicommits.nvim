@@ -13,9 +13,25 @@ if [ ! -d "$HOME/.local/share/nvim/lazy/plenary.nvim" ] && [ ! -d "$HOME/.local/
   echo ""
 fi
 
-# Run all test specs
-nvim --headless --noplugin -u tests/minimal_init.lua \
-  -c "PlenaryBustedDirectory tests/ { minimal_init = 'tests/minimal_init.lua' }"
+# Run all test specs and capture output
+# Use || true to prevent set -e from exiting on nvim's exit code
+output=$(nvim --headless --noplugin -u tests/minimal_init.lua \
+  -c "PlenaryBustedDirectory tests/ { minimal_init = 'tests/minimal_init.lua' }" 2>&1 || true)
+
+echo "$output"
+
+# Check if tests failed by looking for failure indicators in output
+if echo "$output" | grep -q "Failed\s*:\s*[1-9]"; then
+  echo ""
+  echo "Tests failed!"
+  exit 1
+fi
+
+if echo "$output" | grep -q "Errors\s*:\s*[1-9]"; then
+  echo ""
+  echo "Tests had errors!"
+  exit 1
+fi
 
 echo ""
 echo "Tests complete!"

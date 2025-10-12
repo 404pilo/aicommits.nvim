@@ -74,23 +74,64 @@ local function check_curl()
   end
 end
 
--- Check OpenAI API key
-local function check_api_key()
-  local openai = require("aicommits.openai")
-  local api_key = openai.get_api_key()
+-- Check provider configuration and availability
+local function check_provider()
+  local config = require("aicommits.config")
+  local providers = require("aicommits.providers")
 
-  if not api_key or api_key == "" then
-    vim.health.error("OpenAI API key not found", {
-      "Set AICOMMITS_NVIM_OPENAI_API_KEY environment variable (recommended)",
-      "Or set OPENAI_API_KEY environment variable",
-    })
+  local active_name = config.get("active_provider")
+
+  if not active_name or active_name == "" then
+    vim.health.error("No active provider configured", "Set 'active_provider' in your configuration")
     return false
-  else
-    -- Don't show the actual key, just confirm it exists
-    local masked = api_key:sub(1, 7) .. "..." .. api_key:sub(-4)
-    vim.health.ok(string.format("API key configured (%s)", masked))
-    return true
   end
+
+  vim.health.ok(string.format("Active provider: %s", active_name))
+
+  -- Check if provider is registered
+  local provider = providers.get(active_name)
+  if not provider then
+    local available = providers.list()
+    local available_str = #available > 0 and table.concat(available, ", ") or "none"
+    vim.health.error(
+      string.format("Provider '%s' not found", active_name),
+      string.format("Available providers: %s", available_str)
+    )
+    return false
+  end
+
+  vim.health.ok(string.format("Provider '%s' is registered", active_name))
+
+  -- Get provider configuration
+  local provider_config = config.get("providers." .. active_name)
+  if not provider_config then
+    vim.health.error(
+      string.format("No configuration found for provider '%s'", active_name),
+      string.format("Add 'providers.%s' configuration", active_name)
+    )
+    return false
+  end
+
+  -- Check if provider is enabled
+  if provider_config.enabled == false then
+    vim.health.error(
+      string.format("Provider '%s' is disabled", active_name),
+      string.format("Set 'providers.%s.enabled = true'", active_name)
+    )
+    return false
+  end
+
+  vim.health.ok(string.format("Provider '%s' is enabled", active_name))
+
+  -- Validate provider configuration
+  local valid, errors = provider:validate_config(provider_config)
+  if not valid then
+    vim.health.error(string.format("Provider '%s' configuration is invalid", active_name), errors)
+    return false
+  end
+
+  vim.health.ok(string.format("Provider '%s' configuration is valid", active_name))
+  return true
 end
 
 -- Check if in a git repository
@@ -179,7 +220,10 @@ function M.check()
   local nvim_ok = check_neovim()
   local git_ok = check_git()
   local curl_ok = check_curl()
-  local api_key_ok = check_api_key()
+
+  -- Provider configuration
+  vim.health.start("Provider Configuration")
+  local provider_ok = check_provider()
 
   -- Configuration
   vim.health.start("Configuration")
@@ -195,7 +239,7 @@ function M.check()
 
   -- Summary
   vim.health.start("Summary")
-  local all_required = nvim_ok and git_ok and curl_ok and api_key_ok and config_ok
+  local all_required = nvim_ok and git_ok and curl_ok and provider_ok and config_ok
 
   if all_required then
     vim.health.ok("All required dependencies are satisfied. You're ready to use aicommits.nvim!")

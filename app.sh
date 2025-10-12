@@ -153,17 +153,27 @@ cmd_test() {
 
     # Run tests (same command as CI)
     print_step "Running test suite..."
-    nvim --headless --noplugin -u tests/minimal_init.lua \
-        -c "PlenaryBustedDirectory tests/ { minimal_init = 'tests/minimal_init.lua' }"
+    # Use || true to prevent set -e from exiting on nvim's exit code
+    output=$(nvim --headless --noplugin -u tests/minimal_init.lua \
+        -c "PlenaryBustedDirectory tests/ { minimal_init = 'tests/minimal_init.lua' }" 2>&1 || true)
 
-    if [ $? -eq 0 ]; then
-        echo ""
-        print_success "All tests passed!"
-    else
+    echo "$output"
+
+    # Check for failures in output (plenary doesn't exit with proper code)
+    if echo "$output" | grep -q "Failed\s*:\s*[1-9]"; then
         echo ""
         print_error "Tests failed"
         exit 1
     fi
+
+    if echo "$output" | grep -q "Errors\s*:\s*[1-9]"; then
+        echo ""
+        print_error "Tests had errors"
+        exit 1
+    fi
+
+    echo ""
+    print_success "All tests passed!"
 }
 
 # Lint command - run stylua check (same as CI)

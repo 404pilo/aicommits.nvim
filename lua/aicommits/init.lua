@@ -30,6 +30,10 @@ function M.setup(opts)
     return
   end
 
+  -- Initialize provider registry
+  local providers = require("aicommits.providers")
+  providers.setup()
+
   -- Register commands
   local commands = require("aicommits.commands")
   commands.setup()
@@ -50,16 +54,7 @@ function M.commit()
     return
   end
 
-  -- Check if API key is available
-  local openai = require("aicommits.openai")
-  if not openai.get_api_key() then
-    utils.notify_error(
-      "OpenAI API key not found. Set AICOMMITS_NVIM_OPENAI_API_KEY or OPENAI_API_KEY environment variable."
-    )
-    return
-  end
-
-  -- Run the commit workflow
+  -- Run the commit workflow (provider validation happens in commit.generate_and_commit)
   local commit = require("aicommits.commit")
   commit.generate_and_commit()
 end

@@ -9,7 +9,7 @@ describe("performance", function()
       package.loaded["aicommits.config"] = nil
       package.loaded["aicommits.git"] = nil
       package.loaded["aicommits.notifications"] = nil
-      package.loaded["aicommits.openai"] = nil
+      package.loaded["aicommits.providers"] = nil
 
       local start = vim.loop.hrtime()
       require("aicommits")
@@ -128,7 +128,8 @@ describe("performance", function()
         "aicommits.notifications",
         "aicommits.health",
         "aicommits.commands",
-        "aicommits.openai",
+        "aicommits.providers",
+        "aicommits.providers.openai",
         "aicommits.commit",
         "aicommits.utils",
       }

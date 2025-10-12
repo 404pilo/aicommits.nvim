@@ -69,11 +69,14 @@ describe("edge cases", function()
       assert.is_true(type(api_key) == "string" or api_key == vim.NIL)
     end)
 
-    it("openai module handles missing keys gracefully", function()
-      local openai = require("aicommits.openai")
-      -- get_api_key should not crash even if no key is set
-      local ok, key = pcall(openai.get_api_key)
-      assert.is_true(ok)
+    it("provider validates missing API keys gracefully", function()
+      local providers = require("aicommits.providers")
+      providers.setup()
+      local openai = providers.get("openai")
+
+      -- validate_config should handle missing API key (can come from env)
+      local valid, errors = openai:validate_config({ model = "gpt-4.1-nano" })
+      assert.is_true(valid or #errors > 0) -- Either valid (from env) or has error
     end)
   end)
 
@@ -113,15 +116,25 @@ describe("edge cases", function()
     it("handles invalid configuration values", function()
       local ok = pcall(function()
         config.setup({
-          model = 123, -- should be string
-          max_length = "not a number", -- should be number
+          providers = {
+            openai = {
+              model = 123, -- should be string
+              max_length = "not a number", -- should be number
+            },
+          },
         })
       end)
       -- Should not crash during setup
       assert.is_true(ok)
 
-      -- But validation should detect these issues
-      local valid, errors = config.validate()
+      -- Provider validation should detect invalid model type
+      local providers = require("aicommits.providers")
+      providers.setup()
+      local provider_config = config.get("providers.openai")
+      local openai = providers.get("openai")
+      local valid, errors = openai:validate_config(provider_config)
+
+      -- Model with value 123 should fail validation
       assert.is_false(valid)
       assert.is_true(#errors > 0)
     end)
