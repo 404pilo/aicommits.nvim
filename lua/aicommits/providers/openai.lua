@@ -1,6 +1,7 @@
 -- OpenAI provider implementation for aicommits.nvim
 local base = require("aicommits.providers.base")
 local http = require("aicommits.http")
+local prompts = require("aicommits.prompts")
 
 -- Create OpenAI provider instance
 local M = base.new({
@@ -30,61 +31,6 @@ local function get_api_key(config)
   end
 
   return nil
-end
-
--- Generate system prompt for conventional commits
--- @param max_length number Maximum commit message length
--- @return string The system prompt
-local function generate_system_prompt(max_length)
-  local commit_types = {
-    docs = "Documentation only changes",
-    style = "Changes that do not affect the meaning of the code (white-space, formatting, missing semi-colons, etc)",
-    refactor = "A code change that neither fixes a bug nor adds a feature",
-    perf = "A code change that improves performance",
-    test = "Adding missing tests or correcting existing tests",
-    build = "Changes that affect the build system or external dependencies",
-    ci = "Changes to our CI configuration files and scripts",
-    chore = "Other changes that don't modify src or test files",
-    revert = "Reverts a previous commit",
-    feat = "A new feature",
-    fix = "A bug fix",
-  }
-
-  local parts = {
-    "Generate a concise git commit message written in present tense for the following code diff with the given specifications below:",
-    "Message language: en",
-    string.format("Commit message must be a maximum of %d characters.", max_length),
-    "Exclude anything unnecessary such as translation. Your entire response will be passed directly into git commit.",
-    "Choose a type from the type-to-description JSON below that best describes the git diff:",
-    vim.json.encode(commit_types),
-    "The output response must be in format:",
-    "<type>(<optional scope>): <commit message>",
-  }
-
-  return table.concat(parts, "\n")
-end
-
--- Sanitize and deduplicate commit messages
--- @param messages table Array of raw commit messages
--- @return table Array of sanitized, unique messages
-local function process_messages(messages)
-  local seen = {}
-  local result = {}
-
-  for _, msg in ipairs(messages) do
-    -- Sanitize: trim, remove newlines, remove trailing period
-    local sanitized = msg:gsub("^%s+", ""):gsub("%s+$", "")
-    sanitized = sanitized:gsub("[\n\r]", "")
-    sanitized = sanitized:gsub("(%w)%.$", "%1")
-
-    -- Deduplicate
-    if not seen[sanitized] and sanitized ~= "" then
-      seen[sanitized] = true
-      table.insert(result, sanitized)
-    end
-  end
-
-  return result
 end
 
 -- Implementation: Generate commit message(s) using OpenAI API
@@ -118,7 +64,7 @@ function M:generate_commit_message(diff, config, callback)
     messages = {
       {
         role = "system",
-        content = generate_system_prompt(max_length),
+        content = prompts.build_system_prompt(max_length),
       },
       {
         role = "user",
@@ -169,7 +115,7 @@ function M:generate_commit_message(diff, config, callback)
     end
 
     -- Process and return messages
-    local processed = process_messages(messages)
+    local processed = prompts.process_messages(messages)
     if #processed == 0 then
       callback("No valid commit messages were generated. Try again.", nil)
       return
