@@ -75,7 +75,7 @@ describe("edge cases", function()
       local openai = providers.get("openai")
 
       -- validate_config should handle missing API key (can come from env)
-      local valid, errors = openai:validate_config({ model = "gpt-4" })
+      local valid, errors = openai:validate_config({ model = "gpt-4.1-nano" })
       assert.is_true(valid or #errors > 0) -- Either valid (from env) or has error
     end)
   end)

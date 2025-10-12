@@ -161,7 +161,7 @@ describe("provider system E2E", function()
 
     it("validates correct configuration", function()
       local valid, errors = openai_provider:validate_config({
-        model = "gpt-4",
+        model = "gpt-4.1-nano",
         api_key = "test_key",
       })
 
@@ -191,7 +191,7 @@ describe("provider system E2E", function()
 
     it("allows missing api_key (can come from environment)", function()
       local valid, errors = openai_provider:validate_config({
-        model = "gpt-4",
+        model = "gpt-4.1-nano",
       })
 
       -- Should be valid because API key can come from OPENAI_API_KEY env var
@@ -247,7 +247,7 @@ describe("provider system E2E", function()
       aicommits.setup({
         providers = {
           openai = {
-            model = "gpt-4",
+            model = "gpt-4.1-nano",
             max_length = 72,
           },
         },
@@ -257,7 +257,7 @@ describe("provider system E2E", function()
       assert.is_true(aicommits.is_initialized())
 
       -- Config loaded
-      assert.equals("gpt-4", config.get("providers.openai.model"))
+      assert.equals("gpt-4.1-nano", config.get("providers.openai.model"))
       assert.equals(72, config.get("providers.openai.max_length"))
 
       -- Provider available

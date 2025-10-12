@@ -39,7 +39,7 @@ With custom config:
     require("aicommits").setup({
       providers = {
         openai = {
-          model = "gpt-4",
+          model = "gpt-4.1-nano",
           max_length = 72,
           generate = 3,
         },
@@ -174,7 +174,7 @@ require("aicommits").setup({
   active_provider = "openai",
   providers = {
     openai = {
-      model = "gpt-4",      -- Use a different model
+      model = "gpt-4.1-nano",      -- Use a different model
       max_length = 72,      -- Longer commit messages
       generate = 3,         -- Generate 3 options to choose from
     },
@@ -189,7 +189,7 @@ require("aicommits").setup({
     openai = {
       endpoint = "https://your-proxy.com/v1/chat/completions",
       api_key = "your-api-key",  -- Or use environment variables
-      model = "gpt-4",
+      model = "gpt-4.1-nano",
     },
   },
 })

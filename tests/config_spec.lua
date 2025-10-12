@@ -49,13 +49,13 @@ describe("aicommits.config", function()
       config.setup({
         providers = {
           openai = {
-            model = "gpt-4",
+            model = "gpt-4.1-nano",
             max_length = 72,
           },
         },
       })
 
-      assert.equals("gpt-4", config.get("providers.openai.model"))
+      assert.equals("gpt-4.1-nano", config.get("providers.openai.model"))
       assert.equals(72, config.get("providers.openai.max_length"))
       -- Check other defaults are preserved
       assert.equals(1, config.get("providers.openai.generate"))
@@ -153,7 +153,7 @@ describe("aicommits.config", function()
         providers = {
           openai = {
             enabled = true,
-            model = "gpt-4",
+            model = "gpt-4.1-nano",
             max_length = 72,
             generate = 3,
           },

@@ -27,7 +27,7 @@ describe("integration", function()
       local ok = pcall(aicommits.setup, {
         providers = {
           openai = {
-            model = "gpt-4",
+            model = "gpt-4.1-nano",
             generate = 3,
           },
         },
@@ -239,7 +239,7 @@ describe("integration", function()
       aicommits.setup({
         providers = {
           openai = {
-            model = "gpt-4",
+            model = "gpt-4.1-nano",
             max_length = 72,
           },
         },
@@ -247,7 +247,7 @@ describe("integration", function()
       assert.is_true(aicommits.is_initialized())
 
       -- Phase 2: Verify config
-      assert.equals("gpt-4", config.get("providers.openai.model"))
+      assert.equals("gpt-4.1-nano", config.get("providers.openai.model"))
       assert.equals(72, config.get("providers.openai.max_length"))
 
       -- Phase 3: Register commands
