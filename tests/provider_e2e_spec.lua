@@ -203,7 +203,7 @@ describe("provider system E2E", function()
       config.setup({
         providers = {
           openai = {
-            model = "",  -- Invalid: empty model
+            model = "", -- Invalid: empty model
           },
         },
       })
@@ -317,9 +317,9 @@ describe("provider system E2E", function()
 
     it("handles missing provider configuration", function()
       config.setup({
-        active_provider = "custom_provider",  -- Provider that doesn't exist
+        active_provider = "custom_provider", -- Provider that doesn't exist
         providers = {
-          custom_provider = nil,  -- Explicitly no config
+          custom_provider = nil, -- Explicitly no config
         },
       })
       providers.setup()
