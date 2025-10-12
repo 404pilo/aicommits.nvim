@@ -126,10 +126,7 @@ local function check_provider()
   -- Validate provider configuration
   local valid, errors = provider:validate_config(provider_config)
   if not valid then
-    vim.health.error(
-      string.format("Provider '%s' configuration is invalid", active_name),
-      errors
-    )
+    vim.health.error(string.format("Provider '%s' configuration is invalid", active_name), errors)
     return false
   end
 

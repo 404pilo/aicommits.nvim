@@ -61,8 +61,7 @@ function M.get_active_provider()
   if not provider then
     local available = M.list()
     local available_str = #available > 0 and table.concat(available, ", ") or "none"
-    return nil,
-      string.format("Provider '%s' not found. Available providers: %s", active_name, available_str)
+    return nil, string.format("Provider '%s' not found. Available providers: %s", active_name, available_str)
   end
 
   -- Get provider configuration
@@ -79,7 +78,8 @@ function M.get_active_provider()
   -- Validate provider configuration
   local valid, errors = provider:validate_config(provider_config)
   if not valid then
-    local error_msg = string.format("Provider '%s' configuration is invalid:\n  - %s", active_name, table.concat(errors, "\n  - "))
+    local error_msg =
+      string.format("Provider '%s' configuration is invalid:\n  - %s", active_name, table.concat(errors, "\n  - "))
     return nil, error_msg
   end
 
