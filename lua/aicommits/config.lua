@@ -25,6 +25,17 @@ M.defaults = {
       presence_penalty = 0, -- Presence penalty (-2 to 2)
       max_tokens = 200, -- Maximum tokens in response
     },
+    -- Google Vertex AI Configuration
+    vertex = {
+      enabled = false, -- Enable/disable this provider (disabled by default)
+      api_key = nil, -- API key (nil = use environment variables)
+      model = "gemini-2.0-flash-lite", -- Vertex AI model to use
+      project = nil, -- GCP project ID (required)
+      location = "us-central1", -- GCP location/region
+      max_length = 50, -- Maximum commit message length
+      temperature = 0.7, -- Sampling temperature (0-2)
+      max_tokens = 200, -- Maximum tokens in response
+    },
     -- Future providers can be added here:
     -- anthropic = {
     --   enabled = false,

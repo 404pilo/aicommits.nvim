@@ -97,6 +97,14 @@ function M.setup()
     vim.notify("Failed to load OpenAI provider: " .. tostring(openai_provider), vim.log.levels.ERROR)
   end
 
+  -- Register Vertex AI provider
+  local ok_vertex, vertex_provider = pcall(require, "aicommits.providers.vertex")
+  if ok_vertex then
+    M.register("vertex", vertex_provider)
+  else
+    vim.notify("Failed to load Vertex AI provider: " .. tostring(vertex_provider), vim.log.levels.ERROR)
+  end
+
   -- Future: Register additional built-in providers
   -- local ok, anthropic_provider = pcall(require, "aicommits.providers.anthropic")
   -- if ok then

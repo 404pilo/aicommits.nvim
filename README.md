@@ -16,7 +16,7 @@ This plugin generates conventional commit messages using AI. Stage your changes,
 
 - Neovim 0.9+
 - Git
-- OpenAI API key
+- API key for your chosen provider (OpenAI or Google Vertex AI)
 - curl
 
 ## Installation
@@ -72,6 +72,8 @@ EOF
 
 ## Setup
 
+### OpenAI
+
 Set your OpenAI API key:
 
 ```bash
@@ -84,7 +86,41 @@ Or use the standard OpenAI environment variable:
 export OPENAI_API_KEY="sk-..."
 ```
 
-Add to your shell config (`~/.bashrc`, `~/.zshrc`, etc.) and restart your shell.
+### Google Vertex AI
+
+Set your Vertex AI API key and configure the provider:
+
+```bash
+export VERTEX_API_KEY="your-vertex-api-key"
+```
+
+Or use the plugin-specific environment variable:
+
+```bash
+export AICOMMITS_NVIM_VERTEX_API_KEY="your-vertex-api-key"
+```
+
+Configure in your Neovim setup:
+
+```lua
+require("aicommits").setup({
+  active_provider = "vertex",
+  providers = {
+    vertex = {
+      enabled = true,
+      model = "gemini-2.0-flash-lite",
+      project = "your-gcp-project-id",  -- Required: Your GCP project ID
+      location = "us-central1",         -- GCP region
+      max_length = 50,
+      temperature = 0.7,
+    },
+  },
+})
+```
+
+**Note:** Vertex AI requires a GCP project ID. Make sure you have enabled the Vertex AI API in your Google Cloud project.
+
+Add environment variables to your shell config (`~/.bashrc`, `~/.zshrc`, etc.) and restart your shell.
 
 ## Usage
 
@@ -133,6 +169,17 @@ require("aicommits").setup({
       presence_penalty = 0,    -- Presence penalty (-2 to 2)
       max_tokens = 200,        -- Maximum tokens in response
     },
+    -- Google Vertex AI Configuration
+    vertex = {
+      enabled = false,         -- Enable/disable this provider
+      api_key = nil,           -- API key (nil = use environment variables)
+      model = "gemini-2.0-flash-lite",  -- Vertex AI model
+      project = nil,           -- GCP project ID (required)
+      location = "us-central1", -- GCP region
+      max_length = 50,         -- Max characters in commit message
+      temperature = 0.7,       -- Sampling temperature (0-2)
+      max_tokens = 200,        -- Maximum tokens in response
+    },
     -- Future providers can be added here
     -- anthropic = { ... },
     -- ollama = { ... },
@@ -168,6 +215,13 @@ require("aicommits").setup({
 
 The plugin uses a provider system to support multiple AI services. Each provider has its own configuration section under `providers`.
 
+#### Supported Providers
+
+- **OpenAI** - OpenAI GPT models (default)
+- **Vertex AI** - Google Vertex AI Gemini models
+
+#### OpenAI Provider
+
 **Configure OpenAI with custom settings:**
 ```lua
 require("aicommits").setup({
@@ -194,6 +248,46 @@ require("aicommits").setup({
   },
 })
 ```
+
+#### Vertex AI Provider
+
+**Configure Vertex AI Gemini:**
+```lua
+require("aicommits").setup({
+  active_provider = "vertex",
+  providers = {
+    vertex = {
+      enabled = true,
+      model = "gemini-2.0-flash-lite",
+      project = "my-gcp-project",      -- Required: Your GCP project ID
+      location = "us-central1",        -- GCP region
+      max_length = 50,
+      temperature = 0.7,
+      max_tokens = 200,
+    },
+  },
+})
+```
+
+**API Key Configuration:**
+
+Vertex AI supports multiple ways to set your API key:
+
+1. **Environment variable (recommended):**
+   ```bash
+   export VERTEX_API_KEY="your-api-key"
+   # or
+   export AICOMMITS_NVIM_VERTEX_API_KEY="your-api-key"
+   ```
+
+2. **Direct configuration:**
+   ```lua
+   providers = {
+     vertex = {
+       api_key = "your-api-key",  -- Not recommended for security
+     },
+   }
+   ```
 
 ### UI Configuration
 
