@@ -422,12 +422,63 @@ All providers must implement the interface defined in [`lua/aicommits/providers/
 4. **`get_auth_headers(self, config)`** - Get HTTP authentication headers
    - Returns: table of HTTP headers
    - Default: Returns empty table `{}`
+   - **When to implement:** Only if your AI service requires authentication (API keys, bearer tokens, custom headers). Local services like Ollama can skip this.
 
 5. **`get_capabilities(self)`** - Describe provider features
-   - Returns: table with capabilities
+   - Returns: table with capabilities (supports_streaming, supports_multiple_generations, max_generations)
    - Default: Returns basic capabilities (no streaming, single generation)
+   - **When to implement:** To advertise your provider's features. Useful for future UI features like provider selection (#7) and to inform users of your provider's limitations.
 
 ### Step-by-Step Implementation Guide
+
+**Quick Reference: Minimal Provider Template**
+
+Here's the absolute minimum code needed for a working provider:
+
+```lua
+-- lua/aicommits/providers/myprovider.lua
+local base = require("aicommits.providers.base")
+local http = require("aicommits.http")
+local prompts = require("aicommits.prompts")
+
+local M = base.new({ name = "myprovider" })
+
+function M:validate_config(config)
+  local errors = {}
+  if not config.model or config.model == "" then
+    table.insert(errors, "model is required")
+  end
+  return #errors == 0, errors
+end
+
+function M:generate_commit_message(diff, config, callback)
+  local request_body = {
+    model = config.model or "default-model",
+    prompt = prompts.build_system_prompt(config.max_length or 50) .. "\n\n" .. diff,
+  }
+
+  http.post("https://api.example.com/generate", self:get_auth_headers(config), vim.json.encode(request_body), function(err, response_body)
+    if err then
+      callback(err, nil)
+      return
+    end
+
+    local ok, response = pcall(vim.json.decode, response_body)
+    if not ok or not response.message then
+      callback("Invalid API response", nil)
+      return
+    end
+
+    callback(nil, prompts.process_messages({ response.message }))
+  end)
+end
+
+return M
+```
+
+Copy this template and customize it for your provider's API. Follow the detailed steps below for complete implementation guidance.
+
+---
 
 #### Step 1: Create Provider File
 
@@ -508,6 +559,7 @@ function M:generate_commit_message(diff, config, callback)
   local temperature = config.temperature or 0.7
 
   -- Build API request body
+  -- Note: prompts.build_system_prompt() returns instructions for conventional commit format
   local request_body = {
     model = model,
     prompt = prompts.build_system_prompt(max_length) .. "\n\n" .. diff,
@@ -557,23 +609,61 @@ end
 
 #### Step 5: Implement Authentication (if needed)
 
-If your provider requires API keys or custom headers:
+**When to implement:** Only if your AI service requires authentication (API keys, bearer tokens, etc.).
+
+For local services like Ollama that don't require authentication, you can skip this step entirely - the base implementation returns an empty headers table by default.
+
+If your provider needs authentication (like OpenAI, Anthropic, etc.), implement `get_auth_headers`:
 
 ```lua
--- Get authentication headers for Ollama API
+-- Get authentication headers
 -- @param config table Provider configuration
 -- @return table headers HTTP headers
 function M:get_auth_headers(config)
-  -- Ollama typically doesn't need auth headers for local use
-  -- But you can add support for authenticated instances:
-  if config.api_key and config.api_key ~= "" then
+  local api_key = get_api_key(config) -- Use helper function (see Environment Variables section)
+
+  if api_key then
     return {
-      Authorization = "Bearer " .. config.api_key,
+      Authorization = "Bearer " .. api_key,
     }
   end
+
   return {}
 end
 ```
+
+**Recommended Pattern: Environment Variable Support**
+
+If your provider requires API keys, follow the OpenAI provider's pattern for environment variable fallback:
+
+```lua
+-- Helper function to get API key from multiple sources
+local function get_api_key(config)
+  -- Priority 1: Check config first
+  if config.api_key and config.api_key ~= "" then
+    return config.api_key
+  end
+
+  -- Priority 2: Check plugin-specific env var
+  local key = vim.env.AICOMMITS_NVIM_YOURPROVIDER_API_KEY
+  if key and key ~= "" then
+    return key
+  end
+
+  -- Priority 3: Check generic provider env var
+  key = vim.env.YOURPROVIDER_API_KEY
+  if key and key ~= "" then
+    return key
+  end
+
+  return nil
+end
+```
+
+This pattern provides flexibility for users to configure API keys via:
+1. Direct configuration in `setup()`
+2. Plugin-specific environment variables
+3. Standard provider environment variables
 
 #### Step 6: Define Capabilities (optional)
 
@@ -593,7 +683,7 @@ end
 
 #### Step 7: Register Your Provider
 
-Edit `lua/aicommits/providers/init.lua` to register your provider during setup:
+Edit the **existing** `M.setup()` function in `lua/aicommits/providers/init.lua` to register your provider during plugin initialization:
 
 ```lua
 function M.setup()
@@ -603,7 +693,7 @@ function M.setup()
     M.register("openai", openai_provider)
   end
 
-  -- Add your provider
+  -- Add your provider registration block below
   local ok, ollama_provider = pcall(require, "aicommits.providers.ollama")
   if ok then
     M.register("ollama", ollama_provider)
@@ -612,6 +702,8 @@ function M.setup()
   end
 end
 ```
+
+**Important:** Don't create a new `M.setup()` function - add your provider registration to the existing one.
 
 ### Configuration Integration
 
@@ -644,10 +736,10 @@ M.defaults = {
 
 #### Unit Tests
 
-Create unit tests in `tests/providers/` to test your provider implementation:
+Create unit tests in `tests/` to test your provider implementation:
 
 ```lua
--- tests/providers/ollama_spec.lua
+-- tests/ollama_spec.lua
 describe("ollama provider", function()
   local ollama
   local base
@@ -803,34 +895,6 @@ require("aicommits").setup({
 })
 ```
 
-#### Environment Variables (optional)
-
-If your provider supports environment variables for API keys:
-
-```lua
--- In your provider implementation
-local function get_api_key(config)
-  -- Check config first
-  if config.api_key and config.api_key ~= "" then
-    return config.api_key
-  end
-
-  -- Check plugin-specific env var
-  local key = vim.env.AICOMMITS_NVIM_OLLAMA_API_KEY
-  if key and key ~= "" then
-    return key
-  end
-
-  -- Check generic env var
-  key = vim.env.OLLAMA_API_KEY
-  if key and key ~= "" then
-    return key
-  end
-
-  return nil
-end
-```
-
 ### Reference Implementations
 
 Use these as examples when building your provider:
@@ -860,12 +924,12 @@ Before submitting your provider implementation, ensure:
 - [ ] Optional methods implemented as needed (`get_auth_headers`, `get_capabilities`)
 - [ ] Provider registered in `lua/aicommits/providers/init.lua`
 - [ ] Default configuration added to `lua/aicommits/config.lua`
-- [ ] Unit tests created in `tests/providers/` or `tests/`
+- [ ] Unit tests created in `tests/`
 - [ ] Integration tests added to verify registration and configuration
 - [ ] Tests pass (`./app.sh test`)
 - [ ] Code formatted (`./app.sh format`)
 - [ ] Documentation updated in README.md (add to supported providers list)
-- [ ] PR description includes configuration example
+- [ ] PR description includes configuration example and basic usage instructions
 - [ ] Health check validates your provider (`:checkhealth aicommits`)
 
 ### Common Patterns
@@ -922,6 +986,128 @@ local prompts = require("aicommits.prompts")
 
 local system_prompt = prompts.build_system_prompt(max_length)
 local full_prompt = system_prompt .. "\n\n" .. diff
+```
+
+### Troubleshooting Common Mistakes
+
+When implementing a provider, watch out for these common pitfalls:
+
+#### 1. Missing `return M` Statement
+```lua
+-- ❌ Wrong - forgot to return module
+local M = base.new({ name = "myprovider" })
+function M:validate_config(config)
+  -- ...
+end
+-- Missing: return M
+
+-- ✅ Correct - always return the module
+local M = base.new({ name = "myprovider" })
+function M:validate_config(config)
+  -- ...
+end
+return M
+```
+
+#### 2. Incorrect `base.new()` Usage
+```lua
+-- ❌ Wrong - missing name field
+local M = base.new({})
+
+-- ❌ Wrong - trying to extend after creation
+local M = base.new({ name = "myprovider" })
+M.name = "different_name" -- Don't do this!
+
+-- ✅ Correct - provide name upfront
+local M = base.new({ name = "myprovider" })
+```
+
+#### 3. Wrong Callback Signature
+```lua
+-- ❌ Wrong - incorrect parameter order
+function M:generate_commit_message(diff, config, callback)
+  callback(messages, error) -- Wrong order!
+end
+
+-- ✅ Correct - error first, then result
+function M:generate_commit_message(diff, config, callback)
+  callback(nil, messages) -- Success: nil error, messages result
+  -- or
+  callback("Error message", nil) -- Failure: error string, nil result
+end
+```
+
+#### 4. Missing `vim.schedule` in Callbacks
+```lua
+-- ❌ Wrong - direct UI updates in async callback
+http.post(url, headers, body, function(err, response)
+  vim.notify("Done!") -- May cause issues if not in main thread
+end)
+
+-- ✅ Correct - wrap UI updates in vim.schedule
+http.post(url, headers, body, function(err, response)
+  vim.schedule(function()
+    vim.notify("Done!")
+  end)
+end)
+
+-- ℹ️ Note: The http.post wrapper in this plugin already handles this,
+-- but keep it in mind if using other async APIs
+```
+
+#### 5. Forgetting to Register Provider
+```lua
+-- Don't forget to add your provider to lua/aicommits/providers/init.lua:
+function M.setup()
+  -- Add this block for your provider
+  local ok, myprovider = pcall(require, "aicommits.providers.myprovider")
+  if ok then
+    M.register("myprovider", myprovider)
+  end
+end
+```
+
+#### 6. Not Handling API Errors
+```lua
+-- ❌ Wrong - assuming response is always successful
+local response = vim.json.decode(response_body)
+local message = response.choices[1].message.content -- May be nil!
+
+-- ✅ Correct - check each step
+local ok, response = pcall(vim.json.decode, response_body)
+if not ok then
+  callback("Failed to parse response", nil)
+  return
+end
+
+if response.error then
+  callback("API Error: " .. response.error.message, nil)
+  return
+end
+
+if not response.choices or #response.choices == 0 then
+  callback("No messages generated", nil)
+  return
+end
+```
+
+#### 7. Incorrect Configuration Validation
+```lua
+-- ❌ Wrong - validating the wrong thing
+function M:validate_config(config)
+  if not self.name then -- Don't validate 'self', validate 'config'!
+    return false, {"name required"}
+  end
+end
+
+-- ✅ Correct - validate the config parameter
+function M:validate_config(config)
+  local errors = {}
+  if not config.model or config.model == "" then
+    table.insert(errors, "model is required")
+  end
+  return #errors == 0, errors
+end
 ```
 
 ### Getting Help
