@@ -242,9 +242,9 @@ describe("vertex provider", function()
     it("has expected vertex capabilities", function()
       local capabilities = vertex:get_capabilities()
 
-      -- Vertex AI Gemini typically generates one response
-      assert.is_false(capabilities.supports_multiple_generations)
-      assert.equals(1, capabilities.max_generations)
+      -- Vertex AI Gemini generates 3 commit message options
+      assert.is_true(capabilities.supports_multiple_generations)
+      assert.equals(3, capabilities.max_generations)
       assert.is_false(capabilities.supports_streaming)
     end)
   end)

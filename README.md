@@ -112,6 +112,7 @@ require("aicommits").setup({
       project = "your-gcp-project-id",  -- Required: Your GCP project ID
       location = "us-central1",         -- GCP region
       max_length = 50,
+      generate = 3,                     -- Generate 3 options to choose from
       temperature = 0.7,
     },
   },
@@ -177,6 +178,7 @@ require("aicommits").setup({
       project = nil,           -- GCP project ID (required)
       location = "us-central1", -- GCP region
       max_length = 50,         -- Max characters in commit message
+      generate = 3,            -- Number of options (generates 3 by default)
       temperature = 0.7,       -- Sampling temperature (0-2)
       max_tokens = 200,        -- Maximum tokens in response
     },
@@ -262,6 +264,7 @@ require("aicommits").setup({
       project = "my-gcp-project",      -- Required: Your GCP project ID
       location = "us-central1",        -- GCP region
       max_length = 50,
+      generate = 3,                    -- Generate 3 options to choose from
       temperature = 0.7,
       max_tokens = 200,
     },

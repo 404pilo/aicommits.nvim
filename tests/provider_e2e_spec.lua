@@ -430,6 +430,7 @@ describe("provider system E2E", function()
         active_provider = "vertex",
         providers = {
           vertex = {
+            enabled = true,
             model = "gemini-2.0-flash-lite",
             project = "my-project",
             location = "us-central1",
@@ -450,9 +451,8 @@ describe("provider system E2E", function()
       local caps = vertex:get_capabilities()
 
       assert.is_table(caps)
-      assert.is_false(caps.supports_multiple_generations)
-      assert.equals(1, caps.max_generations)
+      assert.is_true(caps.supports_multiple_generations)
+      assert.equals(3, caps.max_generations)
     end)
   end)
 end)
-

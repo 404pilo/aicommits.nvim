@@ -82,7 +82,7 @@ function M:generate_commit_message(diff, config, callback)
     generationConfig = {
       temperature = temperature,
       maxOutputTokens = max_tokens,
-      candidateCount = 1, -- Vertex AI Gemini typically generates one response
+      candidateCount = 3, -- Generate 3 commit message options
     },
   }
 
@@ -189,8 +189,8 @@ end
 function M:get_capabilities()
   return {
     supports_streaming = false, -- Streaming not implemented yet
-    supports_multiple_generations = false, -- Vertex AI Gemini typically generates one response
-    max_generations = 1,
+    supports_multiple_generations = true, -- Generates 3 commit message options
+    max_generations = 3,
   }
 end
 

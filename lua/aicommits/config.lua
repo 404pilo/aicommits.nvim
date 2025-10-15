@@ -33,6 +33,7 @@ M.defaults = {
       project = nil, -- GCP project ID (required)
       location = "us-central1", -- GCP location/region
       max_length = 50, -- Maximum commit message length
+      generate = 3, -- Number of commit message options to generate
       temperature = 0.7, -- Sampling temperature (0-2)
       max_tokens = 200, -- Maximum tokens in response
     },
