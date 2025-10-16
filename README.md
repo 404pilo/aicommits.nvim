@@ -16,8 +16,9 @@ This plugin generates conventional commit messages using AI. Stage your changes,
 
 - Neovim 0.9+
 - Git
-- OpenAI API key
 - curl
+- **For OpenAI**: API key
+- **For Vertex AI**: gcloud CLI + authentication (user credentials or service account)
 
 ## Installation
 
@@ -72,6 +73,8 @@ EOF
 
 ## Setup
 
+### OpenAI
+
 Set your OpenAI API key:
 
 ```bash
@@ -84,7 +87,46 @@ Or use the standard OpenAI environment variable:
 export OPENAI_API_KEY="sk-..."
 ```
 
-Add to your shell config (`~/.bashrc`, `~/.zshrc`, etc.) and restart your shell.
+### Google Vertex AI
+
+**Prerequisites:**
+- gcloud CLI installed: https://cloud.google.com/sdk/install
+- GCP project with Vertex AI API enabled
+
+**Authentication Setup:**
+
+Choose one of the following methods:
+
+1. **User credentials (recommended for development):**
+   ```bash
+   gcloud auth application-default login
+   ```
+
+2. **Service account (recommended for production):**
+   ```bash
+   export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
+   ```
+
+**Configure in your Neovim setup:**
+
+```lua
+require("aicommits").setup({
+  active_provider = "vertex",
+  providers = {
+    vertex = {
+      enabled = true,
+      model = "gemini-2.0-flash-lite",
+      project = "your-gcp-project-id",  -- Required: Your GCP project ID
+      location = "us-central1",         -- GCP region
+      max_length = 50,
+      generate = 3,                     -- Generate 3 options to choose from
+      temperature = 0.7,
+    },
+  },
+})
+```
+
+**Note:** Authentication is handled automatically via gcloud. The plugin will call `gcloud auth application-default print-access-token` to obtain OAuth tokens as needed. Tokens are cached for 55 minutes to minimize gcloud calls.
 
 ## Usage
 
@@ -133,6 +175,20 @@ require("aicommits").setup({
       presence_penalty = 0,    -- Presence penalty (-2 to 2)
       max_tokens = 200,        -- Maximum tokens in response
     },
+    -- Google Vertex AI Configuration
+    -- Requires gcloud CLI: https://cloud.google.com/sdk/install
+    -- Authentication: gcloud auth application-default login
+    -- Or set GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+    vertex = {
+      enabled = false,         -- Enable/disable this provider
+      model = "gemini-2.0-flash-lite",  -- Vertex AI model
+      project = nil,           -- GCP project ID (required)
+      location = "us-central1", -- GCP region
+      max_length = 50,         -- Max characters in commit message
+      generate = 3,            -- Number of options (generates 3 by default)
+      temperature = 0.7,       -- Sampling temperature (0-2)
+      max_tokens = 200,        -- Maximum tokens in response
+    },
     -- Future providers can be added here
     -- anthropic = { ... },
     -- ollama = { ... },
@@ -168,6 +224,13 @@ require("aicommits").setup({
 
 The plugin uses a provider system to support multiple AI services. Each provider has its own configuration section under `providers`.
 
+#### Supported Providers
+
+- **OpenAI** - OpenAI GPT models (default)
+- **Vertex AI** - Google Vertex AI Gemini models
+
+#### OpenAI Provider
+
 **Configure OpenAI with custom settings:**
 ```lua
 require("aicommits").setup({
@@ -194,6 +257,50 @@ require("aicommits").setup({
   },
 })
 ```
+
+#### Vertex AI Provider
+
+**Configure Vertex AI Gemini:**
+```lua
+require("aicommits").setup({
+  active_provider = "vertex",
+  providers = {
+    vertex = {
+      enabled = true,
+      model = "gemini-2.0-flash-lite",
+      project = "my-gcp-project",      -- Required: Your GCP project ID
+      location = "us-central1",        -- GCP region
+      max_length = 50,
+      generate = 3,                    -- Generate 3 options to choose from
+      temperature = 0.7,
+      max_tokens = 200,
+    },
+  },
+})
+```
+
+**Authentication:**
+
+Vertex AI uses gcloud for authentication. You must have gcloud CLI installed and configured:
+
+1. **Install gcloud CLI:**
+   ```bash
+   # macOS
+   brew install google-cloud-sdk
+
+   # Or download from: https://cloud.google.com/sdk/install
+   ```
+
+2. **Authenticate (choose one):**
+   ```bash
+   # Option 1: User credentials (development)
+   gcloud auth application-default login
+
+   # Option 2: Service account (production)
+   export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
+   ```
+
+The plugin will automatically call `gcloud auth application-default print-access-token` to obtain OAuth tokens. Tokens are cached for 55 minutes to minimize gcloud calls.
 
 ### UI Configuration
 

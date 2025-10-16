@@ -374,4 +374,106 @@ describe("provider system E2E", function()
       assert.is_true(vim.tbl_contains(provider_list, "openai"))
     end)
   end)
+
+  describe("Phase 10: Vertex AI provider integration", function()
+    before_each(function()
+      -- Clear package cache
+      package.loaded["aicommits.providers.vertex"] = nil
+      providers.setup()
+    end)
+
+    it("registers vertex provider on setup", function()
+      local provider_list = providers.list()
+      assert.is_table(provider_list)
+      assert.is_true(vim.tbl_contains(provider_list, "vertex"))
+    end)
+
+    it("can retrieve registered vertex provider", function()
+      local vertex = providers.get("vertex")
+      assert.is_not_nil(vertex)
+      assert.equals("vertex", vertex.name)
+    end)
+
+    it("vertex provider has required methods", function()
+      local vertex = providers.get("vertex")
+      assert.is_function(vertex.generate_commit_message)
+      assert.is_function(vertex.validate_config)
+      assert.is_function(vertex.get_auth_headers)
+      assert.is_function(vertex.get_capabilities)
+    end)
+
+    it("validates vertex configuration correctly", function()
+      local vertex = providers.get("vertex")
+
+      -- Mock gcloud being available
+      local original_executable = vim.fn.executable
+      vim.fn.executable = function(cmd)
+        if cmd == "gcloud" then
+          return 1
+        end
+        return original_executable(cmd)
+      end
+
+      -- Valid configuration
+      local valid, errors = vertex:validate_config({
+        model = "gemini-2.0-flash-lite",
+        project = "my-project",
+        location = "us-central1",
+      })
+      assert.is_true(valid)
+      assert.equals(0, #errors)
+
+      -- Invalid: missing project
+      valid, errors = vertex:validate_config({
+        model = "gemini-2.0-flash-lite",
+        location = "us-central1",
+      })
+      assert.is_false(valid)
+      assert.is_true(#errors > 0)
+
+      -- Restore
+      vim.fn.executable = original_executable
+    end)
+
+    it("can use vertex as active provider", function()
+      -- Mock gcloud being available
+      local original_executable = vim.fn.executable
+      vim.fn.executable = function(cmd)
+        if cmd == "gcloud" then
+          return 1
+        end
+        return original_executable(cmd)
+      end
+
+      config.setup({
+        active_provider = "vertex",
+        providers = {
+          vertex = {
+            enabled = true,
+            model = "gemini-2.0-flash-lite",
+            project = "my-project",
+            location = "us-central1",
+          },
+        },
+      })
+
+      local provider, err = providers.get_active_provider()
+
+      assert.is_nil(err)
+      assert.is_not_nil(provider)
+      assert.equals("vertex", provider.name)
+
+      -- Restore
+      vim.fn.executable = original_executable
+    end)
+
+    it("vertex provider returns correct capabilities", function()
+      local vertex = providers.get("vertex")
+      local caps = vertex:get_capabilities()
+
+      assert.is_table(caps)
+      assert.is_true(caps.supports_multiple_generations)
+      assert.equals(3, caps.max_generations)
+    end)
+  end)
 end)
