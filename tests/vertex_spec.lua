@@ -275,17 +275,20 @@ describe("vertex provider", function()
       -- Mock http.post to prevent actual API call
       package.loaded["aicommits.http"] = {
         post = function(endpoint, headers, body, callback)
-          callback(nil, vim.json.encode({
-            candidates = {
-              {
-                content = {
-                  parts = {
-                    { text = "test: commit message" },
+          callback(
+            nil,
+            vim.json.encode({
+              candidates = {
+                {
+                  content = {
+                    parts = {
+                      { text = "test: commit message" },
+                    },
                   },
                 },
               },
-            },
-          }))
+            })
+          )
         end,
       }
 
@@ -316,17 +319,20 @@ describe("vertex provider", function()
       -- Mock http.post
       package.loaded["aicommits.http"] = {
         post = function(endpoint, headers, body, callback)
-          callback(nil, vim.json.encode({
-            candidates = {
-              {
-                content = {
-                  parts = {
-                    { text = "test: commit message" },
+          callback(
+            nil,
+            vim.json.encode({
+              candidates = {
+                {
+                  content = {
+                    parts = {
+                      { text = "test: commit message" },
+                    },
                   },
                 },
               },
-            },
-          }))
+            })
+          )
         end,
       }
 
