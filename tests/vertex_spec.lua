@@ -25,12 +25,27 @@ describe("vertex provider", function()
   end)
 
   describe("validate_config", function()
-    it("accepts valid configuration", function()
+    -- Mock gcloud being available
+    local original_executable
+    before_each(function()
+      original_executable = vim.fn.executable
+      vim.fn.executable = function(cmd)
+        if cmd == "gcloud" then
+          return 1
+        end
+        return original_executable(cmd)
+      end
+    end)
+
+    after_each(function()
+      vim.fn.executable = original_executable
+    end)
+
+    it("accepts valid configuration when gcloud is available", function()
       local valid, errors = vertex:validate_config({
         model = "gemini-2.0-flash-lite",
         project = "my-gcp-project",
         location = "us-central1",
-        api_key = "test_key",
       })
 
       assert.is_true(valid)
@@ -41,7 +56,6 @@ describe("vertex provider", function()
       local valid, errors = vertex:validate_config({
         project = "my-gcp-project",
         location = "us-central1",
-        api_key = "test_key",
       })
 
       assert.is_false(valid)
@@ -54,7 +68,6 @@ describe("vertex provider", function()
         model = "",
         project = "my-gcp-project",
         location = "us-central1",
-        api_key = "test_key",
       })
 
       assert.is_false(valid)
@@ -66,7 +79,6 @@ describe("vertex provider", function()
       local valid, errors = vertex:validate_config({
         model = "gemini-2.0-flash-lite",
         location = "us-central1",
-        api_key = "test_key",
       })
 
       assert.is_false(valid)
@@ -87,7 +99,6 @@ describe("vertex provider", function()
         model = "gemini-2.0-flash-lite",
         project = "",
         location = "us-central1",
-        api_key = "test_key",
       })
 
       assert.is_false(valid)
@@ -98,7 +109,6 @@ describe("vertex provider", function()
       local valid, errors = vertex:validate_config({
         model = "gemini-2.0-flash-lite",
         project = "my-gcp-project",
-        api_key = "test_key",
       })
 
       assert.is_false(valid)
@@ -119,7 +129,6 @@ describe("vertex provider", function()
         model = "gemini-2.0-flash-lite",
         project = "my-gcp-project",
         location = "",
-        api_key = "test_key",
       })
 
       assert.is_false(valid)
@@ -131,7 +140,6 @@ describe("vertex provider", function()
         model = "gemini-2.0-flash-lite",
         project = "my-gcp-project",
         location = "us-central1",
-        api_key = "test_key",
         max_length = -1,
       })
 
@@ -140,92 +148,42 @@ describe("vertex provider", function()
       assert.matches("max_length", errors[1])
     end)
 
-    it("allows missing api_key (can come from environment)", function()
+    it("rejects configuration when gcloud CLI is not installed", function()
+      -- Mock gcloud not being available
+      vim.fn.executable = function(cmd)
+        if cmd == "gcloud" then
+          return 0
+        end
+        return original_executable(cmd)
+      end
+
       local valid, errors = vertex:validate_config({
         model = "gemini-2.0-flash-lite",
         project = "my-gcp-project",
         location = "us-central1",
       })
 
-      -- Should be invalid because API key is required and not in env
       assert.is_false(valid)
       assert.is_true(#errors > 0)
-    end)
-
-    it("validates with environment variable VERTEX_API_KEY", function()
-      -- Set environment variable
-      vim.env.VERTEX_API_KEY = "test_vertex_key"
-
-      local valid, errors = vertex:validate_config({
-        model = "gemini-2.0-flash-lite",
-        project = "my-gcp-project",
-        location = "us-central1",
-      })
-
-      -- Clean up
-      vim.env.VERTEX_API_KEY = nil
-
-      assert.is_true(valid)
-      assert.equals(0, #errors)
-    end)
-
-    it("validates with environment variable AICOMMITS_NVIM_VERTEX_API_KEY", function()
-      -- Set environment variable
-      vim.env.AICOMMITS_NVIM_VERTEX_API_KEY = "test_vertex_key"
-
-      local valid, errors = vertex:validate_config({
-        model = "gemini-2.0-flash-lite",
-        project = "my-gcp-project",
-        location = "us-central1",
-      })
-
-      -- Clean up
-      vim.env.AICOMMITS_NVIM_VERTEX_API_KEY = nil
-
-      assert.is_true(valid)
-      assert.equals(0, #errors)
+      -- Check that error mentions gcloud
+      local has_gcloud_error = false
+      for _, err in ipairs(errors) do
+        if err:match("gcloud") then
+          has_gcloud_error = true
+          break
+        end
+      end
+      assert.is_true(has_gcloud_error)
     end)
   end)
 
   describe("get_auth_headers", function()
-    it("returns headers with Bearer token", function()
-      local headers = vertex:get_auth_headers({
-        api_key = "test_key_123",
-      })
-
-      assert.is_table(headers)
-      assert.equals("Bearer test_key_123", headers.Authorization)
-      assert.equals("application/json", headers["Content-Type"])
-    end)
-
-    it("uses config api_key when provided", function()
-      local headers = vertex:get_auth_headers({
-        api_key = "config_key",
-      })
-
-      assert.equals("Bearer config_key", headers.Authorization)
-    end)
-
-    it("uses environment variable when config api_key is nil", function()
-      vim.env.VERTEX_API_KEY = "env_key"
-
+    it("returns headers with placeholder authorization", function()
       local headers = vertex:get_auth_headers({})
 
-      vim.env.VERTEX_API_KEY = nil
-
-      assert.equals("Bearer env_key", headers.Authorization)
-    end)
-
-    it("prioritizes config over environment", function()
-      vim.env.VERTEX_API_KEY = "env_key"
-
-      local headers = vertex:get_auth_headers({
-        api_key = "config_key",
-      })
-
-      vim.env.VERTEX_API_KEY = nil
-
-      assert.equals("Bearer config_key", headers.Authorization)
+      assert.is_table(headers)
+      assert.is_string(headers.Authorization)
+      assert.equals("application/json", headers["Content-Type"])
     end)
   end)
 
@@ -250,7 +208,36 @@ describe("vertex provider", function()
   end)
 
   describe("generate_commit_message", function()
-    it("requires api_key", function()
+    local original_jobstart
+    local original_executable
+
+    before_each(function()
+      original_jobstart = vim.fn.jobstart
+      original_executable = vim.fn.executable
+
+      -- Mock gcloud being available
+      vim.fn.executable = function(cmd)
+        if cmd == "gcloud" then
+          return 1
+        end
+        return original_executable(cmd)
+      end
+    end)
+
+    after_each(function()
+      vim.fn.jobstart = original_jobstart
+      vim.fn.executable = original_executable
+    end)
+
+    it("requires gcloud CLI to be installed", function()
+      -- Mock gcloud not being available
+      vim.fn.executable = function(cmd)
+        if cmd == "gcloud" then
+          return 0
+        end
+        return original_executable(cmd)
+      end
+
       local called = false
       local error_msg = nil
 
@@ -265,28 +252,100 @@ describe("vertex provider", function()
 
       assert.is_true(called)
       assert.is_not_nil(error_msg)
-      assert.matches("API key not found", error_msg)
+      assert.matches("gcloud", error_msg)
     end)
 
-    it("calls callback with error on missing api_key", function()
-      local callback_called = false
-      local received_error = nil
-      local received_messages = nil
+    it("calls gcloud auth application-default print-access-token", function()
+      local gcloud_called = false
+      local gcloud_command = nil
+
+      vim.fn.jobstart = function(cmd, opts)
+        gcloud_called = true
+        gcloud_command = cmd
+        -- Simulate successful token generation
+        if opts.on_stdout then
+          opts.on_stdout(nil, { "test_token_12345" })
+        end
+        if opts.on_exit then
+          opts.on_exit(nil, 0)
+        end
+        return 1
+      end
+
+      -- Mock http.post to prevent actual API call
+      package.loaded["aicommits.http"] = {
+        post = function(endpoint, headers, body, callback)
+          callback(nil, vim.json.encode({
+            candidates = {
+              {
+                content = {
+                  parts = {
+                    { text = "test: commit message" },
+                  },
+                },
+              },
+            },
+          }))
+        end,
+      }
 
       vertex:generate_commit_message("test diff", {
         model = "gemini-2.0-flash-lite",
         project = "my-project",
         location = "us-central1",
-        -- api_key intentionally missing
-      }, function(err, messages)
-        callback_called = true
-        received_error = err
-        received_messages = messages
-      end)
+      }, function(err, messages) end)
 
-      assert.is_true(callback_called)
-      assert.is_not_nil(received_error)
-      assert.is_nil(received_messages)
+      assert.is_true(gcloud_called)
+      assert.equals("gcloud auth application-default print-access-token", gcloud_command)
+    end)
+
+    it("caches token to avoid repeated gcloud calls", function()
+      local gcloud_call_count = 0
+
+      vim.fn.jobstart = function(cmd, opts)
+        gcloud_call_count = gcloud_call_count + 1
+        if opts.on_stdout then
+          opts.on_stdout(nil, { "cached_token_12345" })
+        end
+        if opts.on_exit then
+          opts.on_exit(nil, 0)
+        end
+        return 1
+      end
+
+      -- Mock http.post
+      package.loaded["aicommits.http"] = {
+        post = function(endpoint, headers, body, callback)
+          callback(nil, vim.json.encode({
+            candidates = {
+              {
+                content = {
+                  parts = {
+                    { text = "test: commit message" },
+                  },
+                },
+              },
+            },
+          }))
+        end,
+      }
+
+      -- First call
+      vertex:generate_commit_message("test diff 1", {
+        model = "gemini-2.0-flash-lite",
+        project = "my-project",
+        location = "us-central1",
+      }, function(err, messages) end)
+
+      -- Second call should use cached token
+      vertex:generate_commit_message("test diff 2", {
+        model = "gemini-2.0-flash-lite",
+        project = "my-project",
+        location = "us-central1",
+      }, function(err, messages) end)
+
+      -- Should only call gcloud once due to caching
+      assert.equals(1, gcloud_call_count)
     end)
   end)
 end)

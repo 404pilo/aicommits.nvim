@@ -405,12 +405,20 @@ describe("provider system E2E", function()
     it("validates vertex configuration correctly", function()
       local vertex = providers.get("vertex")
 
+      -- Mock gcloud being available
+      local original_executable = vim.fn.executable
+      vim.fn.executable = function(cmd)
+        if cmd == "gcloud" then
+          return 1
+        end
+        return original_executable(cmd)
+      end
+
       -- Valid configuration
       local valid, errors = vertex:validate_config({
         model = "gemini-2.0-flash-lite",
         project = "my-project",
         location = "us-central1",
-        api_key = "test_key",
       })
       assert.is_true(valid)
       assert.equals(0, #errors)
@@ -419,13 +427,24 @@ describe("provider system E2E", function()
       valid, errors = vertex:validate_config({
         model = "gemini-2.0-flash-lite",
         location = "us-central1",
-        api_key = "test_key",
       })
       assert.is_false(valid)
       assert.is_true(#errors > 0)
+
+      -- Restore
+      vim.fn.executable = original_executable
     end)
 
     it("can use vertex as active provider", function()
+      -- Mock gcloud being available
+      local original_executable = vim.fn.executable
+      vim.fn.executable = function(cmd)
+        if cmd == "gcloud" then
+          return 1
+        end
+        return original_executable(cmd)
+      end
+
       config.setup({
         active_provider = "vertex",
         providers = {
@@ -434,7 +453,6 @@ describe("provider system E2E", function()
             model = "gemini-2.0-flash-lite",
             project = "my-project",
             location = "us-central1",
-            api_key = "test_key",
           },
         },
       })
@@ -444,6 +462,9 @@ describe("provider system E2E", function()
       assert.is_nil(err)
       assert.is_not_nil(provider)
       assert.equals("vertex", provider.name)
+
+      -- Restore
+      vim.fn.executable = original_executable
     end)
 
     it("vertex provider returns correct capabilities", function()

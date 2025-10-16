@@ -16,8 +16,9 @@ This plugin generates conventional commit messages using AI. Stage your changes,
 
 - Neovim 0.9+
 - Git
-- API key for your chosen provider (OpenAI or Google Vertex AI)
 - curl
+- **For OpenAI**: API key
+- **For Vertex AI**: gcloud CLI + authentication (user credentials or service account)
 
 ## Installation
 
@@ -88,19 +89,25 @@ export OPENAI_API_KEY="sk-..."
 
 ### Google Vertex AI
 
-Set your Vertex AI API key and configure the provider:
+**Prerequisites:**
+- gcloud CLI installed: https://cloud.google.com/sdk/install
+- GCP project with Vertex AI API enabled
 
-```bash
-export VERTEX_API_KEY="your-vertex-api-key"
-```
+**Authentication Setup:**
 
-Or use the plugin-specific environment variable:
+Choose one of the following methods:
 
-```bash
-export AICOMMITS_NVIM_VERTEX_API_KEY="your-vertex-api-key"
-```
+1. **User credentials (recommended for development):**
+   ```bash
+   gcloud auth application-default login
+   ```
 
-Configure in your Neovim setup:
+2. **Service account (recommended for production):**
+   ```bash
+   export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
+   ```
+
+**Configure in your Neovim setup:**
 
 ```lua
 require("aicommits").setup({
@@ -119,9 +126,7 @@ require("aicommits").setup({
 })
 ```
 
-**Note:** Vertex AI requires a GCP project ID. Make sure you have enabled the Vertex AI API in your Google Cloud project.
-
-Add environment variables to your shell config (`~/.bashrc`, `~/.zshrc`, etc.) and restart your shell.
+**Note:** Authentication is handled automatically via gcloud. The plugin will call `gcloud auth application-default print-access-token` to obtain OAuth tokens as needed. Tokens are cached for 55 minutes to minimize gcloud calls.
 
 ## Usage
 
@@ -171,9 +176,11 @@ require("aicommits").setup({
       max_tokens = 200,        -- Maximum tokens in response
     },
     -- Google Vertex AI Configuration
+    -- Requires gcloud CLI: https://cloud.google.com/sdk/install
+    -- Authentication: gcloud auth application-default login
+    -- Or set GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
     vertex = {
       enabled = false,         -- Enable/disable this provider
-      api_key = nil,           -- API key (nil = use environment variables)
       model = "gemini-2.0-flash-lite",  -- Vertex AI model
       project = nil,           -- GCP project ID (required)
       location = "us-central1", -- GCP region
@@ -272,25 +279,28 @@ require("aicommits").setup({
 })
 ```
 
-**API Key Configuration:**
+**Authentication:**
 
-Vertex AI supports multiple ways to set your API key:
+Vertex AI uses gcloud for authentication. You must have gcloud CLI installed and configured:
 
-1. **Environment variable (recommended):**
+1. **Install gcloud CLI:**
    ```bash
-   export VERTEX_API_KEY="your-api-key"
-   # or
-   export AICOMMITS_NVIM_VERTEX_API_KEY="your-api-key"
+   # macOS
+   brew install google-cloud-sdk
+
+   # Or download from: https://cloud.google.com/sdk/install
    ```
 
-2. **Direct configuration:**
-   ```lua
-   providers = {
-     vertex = {
-       api_key = "your-api-key",  -- Not recommended for security
-     },
-   }
+2. **Authenticate (choose one):**
+   ```bash
+   # Option 1: User credentials (development)
+   gcloud auth application-default login
+
+   # Option 2: Service account (production)
+   export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
    ```
+
+The plugin will automatically call `gcloud auth application-default print-access-token` to obtain OAuth tokens. Tokens are cached for 55 minutes to minimize gcloud calls.
 
 ### UI Configuration
 

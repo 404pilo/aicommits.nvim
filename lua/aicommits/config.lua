@@ -26,9 +26,11 @@ M.defaults = {
       max_tokens = 200, -- Maximum tokens in response
     },
     -- Google Vertex AI Configuration
+    -- Requires gcloud CLI: https://cloud.google.com/sdk/install
+    -- Authentication: gcloud auth application-default login
+    -- Or set GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
     vertex = {
       enabled = false, -- Enable/disable this provider (disabled by default)
-      api_key = nil, -- API key (nil = use environment variables)
       model = "gemini-2.0-flash-lite", -- Vertex AI model to use
       project = nil, -- GCP project ID (required)
       location = "us-central1", -- GCP location/region
