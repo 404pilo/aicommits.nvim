@@ -39,6 +39,20 @@ M.defaults = {
       temperature = 0.7, -- Sampling temperature (0-2)
       max_tokens = 200, -- Maximum tokens in response
     },
+    -- Google Gemini API (AI Studio) Configuration
+    -- Get API key from: https://aistudio.google.com
+    -- Simpler alternative to Vertex AI - no GCP project required
+    -- Uses generativelanguage.googleapis.com endpoint
+    ["gemini-api"] = {
+      enabled = false, -- Enable/disable this provider (disabled by default)
+      api_key = nil, -- API key (nil = use environment variables AICOMMITS_NVIM_GEMINI_API_KEY or GEMINI_API_KEY)
+      model = "gemini-2.5-flash", -- Gemini model to use (gemini-2.5-flash, gemini-2.0-flash-exp, gemini-1.5-flash)
+      max_length = 50, -- Maximum commit message length
+      generate = 1, -- Number of commit message options to generate (1-8)
+      temperature = 0.7, -- Sampling temperature (0-2)
+      max_tokens = 200, -- Maximum tokens in response
+      thinking_budget = 0, -- Thinking budget (0 = disabled, -1 = dynamic, 1-24576 = manual). Set to 0 by default for lower cost/latency
+    },
     -- Future providers can be added here:
     -- anthropic = {
     --   enabled = false,

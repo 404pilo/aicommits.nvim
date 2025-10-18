@@ -476,4 +476,99 @@ describe("provider system E2E", function()
       assert.equals(3, caps.max_generations)
     end)
   end)
+
+  describe("Phase 11: Gemini API provider integration", function()
+    before_each(function()
+      -- Clear package cache
+      package.loaded["aicommits.providers.gemini"] = nil
+      providers.setup()
+    end)
+
+    it("registers gemini-api provider on setup", function()
+      local provider_list = providers.list()
+      assert.is_table(provider_list)
+      assert.is_true(vim.tbl_contains(provider_list, "gemini-api"))
+    end)
+
+    it("can retrieve registered gemini-api provider", function()
+      local gemini = providers.get("gemini-api")
+      assert.is_not_nil(gemini)
+      assert.equals("gemini-api", gemini.name)
+    end)
+
+    it("gemini-api provider has required methods", function()
+      local gemini = providers.get("gemini-api")
+      assert.is_function(gemini.generate_commit_message)
+      assert.is_function(gemini.validate_config)
+      assert.is_function(gemini.get_auth_headers)
+      assert.is_function(gemini.get_capabilities)
+    end)
+
+    it("validates gemini-api configuration correctly", function()
+      local gemini = providers.get("gemini-api")
+
+      -- Valid configuration
+      local valid, errors = gemini:validate_config({
+        model = "gemini-2.5-flash",
+        api_key = "test-key",
+      })
+      assert.is_true(valid)
+      assert.equals(0, #errors)
+
+      -- Invalid: missing model
+      valid, errors = gemini:validate_config({
+        api_key = "test-key",
+      })
+      assert.is_false(valid)
+      assert.is_true(#errors > 0)
+    end)
+
+    it("can use gemini-api as active provider", function()
+      config.setup({
+        active_provider = "gemini-api",
+        providers = {
+          ["gemini-api"] = {
+            enabled = true,
+            model = "gemini-2.5-flash",
+            api_key = "test-key",
+          },
+        },
+      })
+
+      local provider, err = providers.get_active_provider()
+
+      assert.is_nil(err)
+      assert.is_not_nil(provider)
+      assert.equals("gemini-api", provider.name)
+    end)
+
+    it("rejects disabled gemini-api provider", function()
+      config.setup({
+        active_provider = "gemini-api",
+        providers = {
+          ["gemini-api"] = {
+            enabled = false,
+            model = "gemini-2.5-flash",
+            api_key = "test-key",
+          },
+        },
+      })
+
+      local provider, err = providers.get_active_provider()
+
+      assert.is_nil(provider)
+      assert.is_not_nil(err)
+      assert.matches("disabled", err)
+    end)
+
+    it("gemini-api provider returns correct capabilities", function()
+      local gemini = providers.get("gemini-api")
+      local caps = gemini:get_capabilities()
+
+      assert.is_table(caps)
+      assert.is_true(caps.supports_multiple_generations)
+      assert.equals(8, caps.max_generations)
+      assert.is_true(caps.supports_streaming)
+    end)
+  end)
 end)

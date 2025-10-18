@@ -105,6 +105,14 @@ function M.setup()
     vim.notify("Failed to load Vertex AI provider: " .. tostring(vertex_provider), vim.log.levels.ERROR)
   end
 
+  -- Register Gemini API provider
+  local ok_gemini, gemini_provider = pcall(require, "aicommits.providers.gemini")
+  if ok_gemini then
+    M.register("gemini-api", gemini_provider)
+  else
+    vim.notify("Failed to load Gemini API provider: " .. tostring(gemini_provider), vim.log.levels.ERROR)
+  end
+
   -- Future: Register additional built-in providers
   -- local ok, anthropic_provider = pcall(require, "aicommits.providers.anthropic")
   -- if ok then

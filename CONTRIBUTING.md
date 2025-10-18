@@ -905,6 +905,13 @@ Use these as examples when building your provider:
   - Demonstrates multiple message generation
   - Good for REST API-based providers
 
+- **Gemini API Provider** ([`lua/aicommits/providers/gemini.lua`](lua/aicommits/providers/gemini.lua))
+  - Simple API key authentication (similar to OpenAI)
+  - Uses Vertex AI's request/response format (contents array with parts)
+  - Custom authentication header (`x-goog-api-key` instead of `Authorization`)
+  - Supports multiple message generation (candidateCount 1-8)
+  - Good example of adapting to provider-specific API patterns
+
 - **Base Provider** ([`lua/aicommits/providers/base.lua`](lua/aicommits/providers/base.lua))
   - Interface definition with documentation
   - Shows required vs optional methods
