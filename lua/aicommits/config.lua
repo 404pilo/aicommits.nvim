@@ -51,6 +51,7 @@ M.defaults = {
       generate = 1, -- Number of commit message options to generate (1-8)
       temperature = 0.7, -- Sampling temperature (0-2)
       max_tokens = 200, -- Maximum tokens in response
+      thinking_budget = 0, -- Thinking budget (0 = disabled, -1 = dynamic, 1-24576 = manual). Set to 0 by default for lower cost/latency
     },
     -- Future providers can be added here:
     -- anthropic = {

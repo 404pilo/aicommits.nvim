@@ -54,6 +54,7 @@ function M:generate_commit_message(diff, config, callback)
   local temperature = config.temperature or 0.7
   local max_tokens = config.max_tokens or 200
   local generate = config.generate or 1
+  local thinking_budget = config.thinking_budget or 0
 
   -- Build Gemini API endpoint
   local endpoint = string.format("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", model)
@@ -77,6 +78,9 @@ function M:generate_commit_message(diff, config, callback)
       temperature = temperature,
       maxOutputTokens = max_tokens,
       candidateCount = generate,
+      thinkingConfig = {
+        thinkingBudget = thinking_budget,
+      },
     },
   }
 
@@ -161,6 +165,15 @@ function M:validate_config(config)
   -- Validate generate (candidateCount has max of 8)
   if config.generate and (type(config.generate) ~= "number" or config.generate < 1 or config.generate > 8) then
     table.insert(errors, "generate must be a number between 1 and 8")
+  end
+
+  -- Validate thinking_budget (0 = disabled, -1 = dynamic, 1-24576 = manual)
+  if config.thinking_budget then
+    if type(config.thinking_budget) ~= "number" then
+      table.insert(errors, "thinking_budget must be a number")
+    elseif config.thinking_budget ~= -1 and (config.thinking_budget < 0 or config.thinking_budget > 24576) then
+      table.insert(errors, "thinking_budget must be -1 (dynamic), 0 (disabled), or between 1 and 24576")
+    end
   end
 
   -- Validate API key availability

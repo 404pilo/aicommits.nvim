@@ -142,6 +142,72 @@ describe("gemini-api provider", function()
       assert.equals(0, #errors)
     end)
 
+    it("accepts thinking_budget = 0 (disabled)", function()
+      local valid, errors = gemini:validate_config({
+        model = "gemini-2.5-flash",
+        api_key = "test-key",
+        thinking_budget = 0,
+      })
+
+      assert.is_true(valid)
+      assert.equals(0, #errors)
+    end)
+
+    it("accepts thinking_budget = -1 (dynamic)", function()
+      local valid, errors = gemini:validate_config({
+        model = "gemini-2.5-flash",
+        api_key = "test-key",
+        thinking_budget = -1,
+      })
+
+      assert.is_true(valid)
+      assert.equals(0, #errors)
+    end)
+
+    it("accepts thinking_budget within valid range (1-24576)", function()
+      local valid, errors = gemini:validate_config({
+        model = "gemini-2.5-flash",
+        api_key = "test-key",
+        thinking_budget = 1024,
+      })
+
+      assert.is_true(valid)
+      assert.equals(0, #errors)
+    end)
+
+    it("rejects thinking_budget > 24576", function()
+      local valid, errors = gemini:validate_config({
+        model = "gemini-2.5-flash",
+        api_key = "test-key",
+        thinking_budget = 30000,
+      })
+
+      assert.is_false(valid)
+      assert.matches("thinking_budget", table.concat(errors, " "))
+    end)
+
+    it("rejects thinking_budget < -1", function()
+      local valid, errors = gemini:validate_config({
+        model = "gemini-2.5-flash",
+        api_key = "test-key",
+        thinking_budget = -2,
+      })
+
+      assert.is_false(valid)
+      assert.matches("thinking_budget", table.concat(errors, " "))
+    end)
+
+    it("rejects non-numeric thinking_budget", function()
+      local valid, errors = gemini:validate_config({
+        model = "gemini-2.5-flash",
+        api_key = "test-key",
+        thinking_budget = "zero",
+      })
+
+      assert.is_false(valid)
+      assert.matches("thinking_budget", table.concat(errors, " "))
+    end)
+
     it("rejects missing API key (no config or env vars)", function()
       -- Clear any environment variables
       vim.env.AICOMMITS_NVIM_GEMINI_API_KEY = nil

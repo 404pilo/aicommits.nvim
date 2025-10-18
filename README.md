@@ -172,6 +172,7 @@ require("aicommits").setup({
       generate = 3,                     -- Generate 1-8 commit message options
       temperature = 0.7,
       max_tokens = 200,
+      thinking_budget = 0,              -- 0 = disabled (default, faster/cheaper), -1 = dynamic, 1-24576 = manual
     },
   },
 })
@@ -181,6 +182,12 @@ require("aicommits").setup({
 - `gemini-2.5-flash` - Latest, recommended (GA)
 - `gemini-2.0-flash-exp` - Experimental Gemini 2.0
 - `gemini-1.5-flash` - Stable Gemini 1.5
+
+**Performance Notes:**
+- `thinking_budget` is set to `0` by default to disable internal reasoning, which keeps responses fast and token usage low
+- With thinking disabled, 200 tokens is sufficient for generating commit messages
+- You can enable thinking for potentially better quality by setting `thinking_budget = -1` (dynamic) or a specific value (1-24576)
+- If you enable thinking, consider increasing `max_tokens` to 1000+ to accommodate reasoning tokens
 
 **Note:** This provider uses the `generativelanguage.googleapis.com` API endpoint, which is completely separate from Vertex AI. No Google Cloud project or gcloud CLI required!
 
@@ -256,6 +263,7 @@ require("aicommits").setup({
       generate = 1,            -- Number of options (1-8)
       temperature = 0.7,       -- Sampling temperature (0-2)
       max_tokens = 200,        -- Maximum tokens in response
+      thinking_budget = 0,     -- Thinking budget: 0 = disabled (default, faster/cheaper), -1 = dynamic, 1-24576 = manual
     },
     -- Future providers can be added here
     -- anthropic = { ... },
