@@ -128,6 +128,62 @@ require("aicommits").setup({
 
 **Note:** Authentication is handled automatically via gcloud. The plugin will call `gcloud auth application-default print-access-token` to obtain OAuth tokens as needed. Tokens are cached for 55 minutes to minimize gcloud calls.
 
+### Google Gemini API (AI Studio)
+
+**Simpler alternative to Vertex AI** - uses Google AI Studio API with straightforward API key authentication.
+
+**Prerequisites:**
+- Google Account
+- Get free API key from: https://aistudio.google.com
+
+**Key Differences from Vertex AI:**
+
+| Feature | Gemini API | Vertex AI |
+|---------|------------|-----------|
+| Authentication | Simple API key | Google Cloud credentials |
+| Setup Required | Just get API key | GCP project, gcloud CLI |
+| Target Users | Individuals, prototyping | Enterprise, production |
+| Free Tier | Generous free tier | GCP billing required |
+
+**Authentication Setup:**
+
+Set your Gemini API key:
+
+```bash
+export AICOMMITS_NVIM_GEMINI_API_KEY="your-api-key-here"
+```
+
+Or use the generic Gemini environment variable:
+
+```bash
+export GEMINI_API_KEY="your-api-key-here"
+```
+
+**Configure in your Neovim setup:**
+
+```lua
+require("aicommits").setup({
+  active_provider = "gemini-api",
+  providers = {
+    ["gemini-api"] = {
+      enabled = true,
+      model = "gemini-2.5-flash",      -- Latest Gemini model
+      max_length = 50,
+      generate = 3,                     -- Generate 1-8 commit message options
+      temperature = 0.7,
+      max_tokens = 200,
+    },
+  },
+})
+```
+
+**Available Models:**
+- `gemini-2.5-flash` - Latest, recommended (GA)
+- `gemini-2.0-flash-exp` - Experimental Gemini 2.0
+- `gemini-1.5-flash` - Stable Gemini 1.5
+
+**Note:** This provider uses the `generativelanguage.googleapis.com` API endpoint, which is completely separate from Vertex AI. No Google Cloud project or gcloud CLI required!
+
 ## Usage
 
 ```bash
@@ -189,6 +245,18 @@ require("aicommits").setup({
       temperature = 0.7,       -- Sampling temperature (0-2)
       max_tokens = 200,        -- Maximum tokens in response
     },
+    -- Google Gemini API (AI Studio) Configuration
+    -- Get API key from: https://aistudio.google.com
+    -- Simpler alternative to Vertex AI - no GCP project required
+    ["gemini-api"] = {
+      enabled = false,         -- Enable/disable this provider
+      api_key = nil,          -- API key (nil = use environment variables)
+      model = "gemini-2.5-flash", -- Gemini model (gemini-2.5-flash, gemini-2.0-flash-exp, gemini-1.5-flash)
+      max_length = 50,         -- Max characters in commit message
+      generate = 1,            -- Number of options (1-8)
+      temperature = 0.7,       -- Sampling temperature (0-2)
+      max_tokens = 200,        -- Maximum tokens in response
+    },
     -- Future providers can be added here
     -- anthropic = { ... },
     -- ollama = { ... },
@@ -227,7 +295,8 @@ The plugin uses a provider system to support multiple AI services. Each provider
 #### Supported Providers
 
 - **OpenAI** - OpenAI GPT models (default)
-- **Vertex AI** - Google Vertex AI Gemini models
+- **Vertex AI** - Google Vertex AI Gemini models (enterprise, requires GCP)
+- **Gemini API** - Google AI Studio API (simple API key, free tier available)
 
 #### OpenAI Provider
 
