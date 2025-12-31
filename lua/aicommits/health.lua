@@ -5,24 +5,13 @@ local M = {}
 
 -- Helper to check if a command exists
 local function command_exists(cmd)
-  local handle = io.popen("command -v " .. cmd .. " 2>/dev/null")
-  if not handle then
-    return false
-  end
-  local result = handle:read("*a")
-  handle:close()
-  return result ~= ""
+  return vim.fn.executable(cmd) == 1
 end
 
 -- Helper to get command version
 local function get_version(cmd, args)
   args = args or "--version"
-  local handle = io.popen(cmd .. " " .. args .. " 2>/dev/null")
-  if not handle then
-    return nil
-  end
-  local result = handle:read("*a")
-  handle:close()
+  local result = vim.fn.system({ cmd, args })
   return result:match("(%d+%.%d+%.%d+)") or result:match("(%d+%.%d+)")
 end
 
