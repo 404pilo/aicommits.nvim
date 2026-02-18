@@ -3,7 +3,7 @@ local M = {}
 
 -- Check if currently in a git repository
 function M.is_git_repo()
-  local result = vim.fn.system("git rev-parse --is-inside-work-tree 2>/dev/null")
+  local result = vim.fn.system({ "git", "rev-parse", "--is-inside-work-tree" })
   return vim.v.shell_error == 0
 end
 
@@ -16,7 +16,7 @@ end
 
 -- Get list of staged files
 function M.get_staged_files()
-  local output = vim.fn.system("git diff --cached --name-only")
+  local output = vim.fn.system({ "git", "diff", "--cached", "--name-only" })
   if vim.v.shell_error ~= 0 then
     return {}
   end
@@ -32,7 +32,7 @@ end
 
 -- Get SHA of last commit
 function M.get_last_commit_sha()
-  local output = vim.fn.system("git log -1 --pretty=%H 2>/dev/null")
+  local output = vim.fn.system({ "git", "log", "-1", "--pretty=%H" })
   if vim.v.shell_error ~= 0 then
     return nil
   end
@@ -41,7 +41,7 @@ end
 
 -- Check if repository has a remote configured
 function M.has_remote()
-  local output = vim.fn.system("git remote -v 2>/dev/null")
+  local output = vim.fn.system({ "git", "remote", "-v" })
   if vim.v.shell_error ~= 0 then
     return false
   end
@@ -51,7 +51,7 @@ end
 -- Get number of staged changes (files + hunks)
 function M.get_staged_stats()
   local files = M.get_staged_files()
-  local output = vim.fn.system("git diff --cached --numstat")
+  local output = vim.fn.system({ "git", "diff", "--cached", "--numstat" })
 
   local stats = {
     files = #files,
