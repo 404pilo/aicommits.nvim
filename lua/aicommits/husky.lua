@@ -48,27 +48,28 @@ local function resolve_via_cli(root)
 end
 
 -- Detect commitlint configuration under the given root directory.
--- Returns the raw config content as a string, or nil if not found.
--- Only returns content when a .husky directory is present.
+-- Returns (content, is_resolved) where is_resolved is true only when the CLI
+-- produced fully resolved rules (extended presets expanded). Returns (nil, false)
+-- if nothing is found. Only runs when a .husky directory is present.
 -- @param root string Path to the project root directory
--- @return string|nil commitlint config content, or nil
+-- @return string|nil, boolean commitlint config content and whether rules are resolved
 function M.get_commitlint_rules(root)
   -- Require .husky directory to be present
   if vim.fn.isdirectory(root .. "/.husky") == 0 then
-    return nil
+    return nil, false
   end
 
   -- Try to get fully resolved config via CLI (resolves extended presets)
   local resolved = resolve_via_cli(root)
   if resolved then
-    return resolved
+    return resolved, true
   end
 
   -- Fall back: check dedicated commitlint config files in priority order
   for _, filename in ipairs(CONFIG_FILES) do
     local path = root .. "/" .. filename
     if vim.fn.filereadable(path) == 1 then
-      return read_file(path)
+      return read_file(path), false
     end
   end
 
@@ -79,12 +80,12 @@ function M.get_commitlint_rules(root)
     if content then
       local ok, pkg = pcall(vim.json.decode, content)
       if ok and pkg and pkg.commitlint then
-        return vim.json.encode(pkg.commitlint)
+        return vim.json.encode(pkg.commitlint), false
       end
     end
   end
 
-  return nil
+  return nil, false
 end
 
 return M

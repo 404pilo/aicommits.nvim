@@ -56,9 +56,13 @@ function M.generate_and_commit()
     if config.get("husky.enabled") then
       local git_root = git.get_git_root()
       if git_root then
-        local commitlint_config = husky.get_commitlint_rules(git_root)
+        local commitlint_config, rules_resolved = husky.get_commitlint_rules(git_root)
         if commitlint_config then
-          provider_config = vim.tbl_extend("force", provider_config, { commitlint_config = commitlint_config })
+          provider_config = vim.tbl_extend(
+            "force",
+            provider_config,
+            { commitlint_config = commitlint_config, commitlint_resolved = rules_resolved }
+          )
         end
       end
     end
@@ -77,7 +81,7 @@ function M.generate_and_commit()
       end
 
       -- Step 5: Show user selection UI (status window auto-closes)
-      local ui_opts = { commitlint_detected = provider_config.commitlint_config ~= nil }
+      local ui_opts = { commitlint_detected = provider_config.commitlint_resolved == true }
       ui.show_commit_prompt(
         messages,
         -- On confirm: create commit
