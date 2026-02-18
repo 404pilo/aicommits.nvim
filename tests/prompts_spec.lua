@@ -49,6 +49,27 @@ describe("prompts module", function()
       assert.matches("100 characters", prompt_100)
       assert.is_not.equals(prompt_50, prompt_100)
     end)
+
+    it("includes commitlint config section when commitlint_config is provided", function()
+      local config_content = '{"extends": ["@commitlint/config-conventional"]}'
+      local prompt = prompts.build_system_prompt(50, config_content)
+
+      assert.matches("commitlint", prompt)
+      assert.matches("config%-conventional", prompt)
+    end)
+
+    it("does not include commitlint section when commitlint_config is nil", function()
+      local prompt = prompts.build_system_prompt(50, nil)
+
+      assert.is_false(prompt:find("commitlint configuration") ~= nil)
+    end)
+
+    it("prompt with commitlint config is longer than without", function()
+      local prompt_without = prompts.build_system_prompt(50)
+      local prompt_with = prompts.build_system_prompt(50, "extends: conventional-commits")
+
+      assert.is_true(#prompt_with > #prompt_without)
+    end)
   end)
 
   describe("process_messages", function()

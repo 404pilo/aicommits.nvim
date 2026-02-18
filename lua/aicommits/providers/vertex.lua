@@ -119,7 +119,7 @@ function M:generate_commit_message(diff, config, callback)
     )
 
     -- Build system prompt and user content
-    local system_prompt = prompts.build_system_prompt(max_length)
+    local system_prompt = prompts.build_system_prompt(max_length, config.commitlint_config)
 
     -- Build Vertex AI API request body (Gemini format)
     local request_body = {

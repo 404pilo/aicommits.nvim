@@ -33,6 +33,18 @@ describe("aicommits.config", function()
       assert.equals(true, config.get("ui.use_custom_picker"))
     end)
 
+    it("defaults husky.enabled to true", function()
+      config.setup({})
+
+      assert.equals(true, config.get("husky.enabled"))
+    end)
+
+    it("allows opting out of husky detection", function()
+      config.setup({ husky = { enabled = false } })
+
+      assert.equals(false, config.get("husky.enabled"))
+    end)
+
     it("allows deep nesting of custom options", function()
       config.setup({
         integrations = {

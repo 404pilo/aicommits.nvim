@@ -6,8 +6,9 @@ local M = {}
 -- Build system prompt for conventional commit message generation
 -- This prompt defines the format, rules, and structure for all AI providers
 -- @param max_length number Maximum commit message length
+-- @param commitlint_config string|nil Optional commitlint config content to enforce
 -- @return string The system prompt to send to any AI provider
-function M.build_system_prompt(max_length)
+function M.build_system_prompt(max_length, commitlint_config)
   local commit_types = {
     docs = "Documentation only changes",
     style = "Changes that do not affect the meaning of the code (white-space, formatting, missing semi-colons, etc)",
@@ -32,6 +33,14 @@ function M.build_system_prompt(max_length)
     "The output response must be in format:",
     "<type>(<optional scope>): <commit message>",
   }
+
+  if commitlint_config then
+    table.insert(
+      parts,
+      "The following commitlint configuration is enforced in this repository. Your commit message MUST comply with it:"
+    )
+    table.insert(parts, commitlint_config)
+  end
 
   return table.concat(parts, "\n")
 end

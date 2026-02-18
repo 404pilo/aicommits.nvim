@@ -158,6 +158,16 @@ local function get_window_config()
   }
 end
 
+-- Build the picker window title, adding a commitlint badge when detected
+-- @param opts table Options passed to show() (may include commitlint_detected)
+-- @return string Window title string
+function M.get_picker_title(opts)
+  if opts and opts.commitlint_detected then
+    return " Select Commit Message · commitlint "
+  end
+  return " Select Commit Message "
+end
+
 -- Create footer text with keybinding help
 local function create_footer()
   return "" .. " " .. "[Enter] Accept   " .. "[e] Edit   " .. "[q] Cancel   " .. "[j/k] Navigate"
@@ -229,6 +239,7 @@ function M.show(messages, opts, callbacks)
 
   -- Create floating window
   local win_config = get_window_config()
+  win_config.title = M.get_picker_title(opts)
   state.win = vim.api.nvim_open_win(state.buf, true, win_config)
 
   -- Set window options
