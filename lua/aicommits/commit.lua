@@ -54,7 +54,7 @@ function M.generate_and_commit()
 
     -- Inject commitlint rules if husky is enabled and detected
     if config.get("husky.enabled") then
-      local git_root = husky.get_git_root()
+      local git_root = git.get_git_root()
       if git_root then
         local commitlint_config = husky.get_commitlint_rules(git_root)
         if commitlint_config then

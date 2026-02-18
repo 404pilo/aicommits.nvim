@@ -70,6 +70,22 @@ describe("prompts module", function()
 
       assert.is_true(#prompt_with > #prompt_without)
     end)
+
+    it("commitlint section uses hard constraint language", function()
+      local prompt = prompts.build_system_prompt(50, '{"extends": ["@commitlint/config-conventional"]}')
+
+      assert.matches("MUST", prompt)
+    end)
+
+    it("commitlint config content appears after the base prompt", function()
+      local base_prompt = prompts.build_system_prompt(50)
+      local config_content = "extends: conventional-commits"
+      local full_prompt = prompts.build_system_prompt(50, config_content)
+
+      local base_end = #base_prompt
+      local config_pos = full_prompt:find(config_content, 1, true)
+      assert.is_true(config_pos > base_end)
+    end)
   end)
 
   describe("process_messages", function()

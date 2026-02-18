@@ -1,6 +1,16 @@
 -- Git operations for aicommits.nvim
 local M = {}
 
+-- Get the git root of the current working directory
+-- @return string|nil git root path, or nil if not in a git repo
+function M.get_git_root()
+  local result = vim.system({ "git", "rev-parse", "--show-toplevel" }, { stderr = false }):wait()
+  if result.code ~= 0 then
+    return nil
+  end
+  return vim.trim(result.stdout)
+end
+
 -- Check if currently in a git repository
 function M.is_git_repo()
   local result = vim.system({ "git", "rev-parse", "--is-inside-work-tree" }, { stderr = false }):wait()

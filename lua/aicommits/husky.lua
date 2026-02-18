@@ -11,6 +11,8 @@ local CONFIG_FILES = {
   ".commitlintrc.json",
   ".commitlintrc.yaml",
   ".commitlintrc.yml",
+  ".commitlintrc.cjs",
+  ".commitlintrc.mjs",
 }
 
 -- Read a file and return its content, or nil on failure
@@ -24,6 +26,29 @@ local function read_file(path)
   return content ~= "" and content or nil
 end
 
+-- Try to get fully resolved commitlint config by running the CLI.
+-- Returns the JSON output string, or nil if unavailable or failed.
+-- @param root string Path to the project root directory
+-- @return string|nil JSON config output, or nil
+local function resolve_via_cli(root)
+  local bin = root .. "/node_modules/.bin/commitlint"
+  if vim.fn.filereadable(bin) == 0 then
+    return nil
+  end
+
+  local cmd = string.format(
+    "(cd %s && ./node_modules/.bin/commitlint --print-config 2>/dev/null)",
+    vim.fn.shellescape(root)
+  )
+  local output = vim.fn.system(cmd)
+
+  if vim.v.shell_error ~= 0 or vim.trim(output) == "" then
+    return nil
+  end
+
+  return vim.trim(output)
+end
+
 -- Detect commitlint configuration under the given root directory.
 -- Returns the raw config content as a string, or nil if not found.
 -- Only returns content when a .husky directory is present.
@@ -35,7 +60,13 @@ function M.get_commitlint_rules(root)
     return nil
   end
 
-  -- Check dedicated commitlint config files in priority order
+  -- Try to get fully resolved config via CLI (resolves extended presets)
+  local resolved = resolve_via_cli(root)
+  if resolved then
+    return resolved
+  end
+
+  -- Fall back: check dedicated commitlint config files in priority order
   for _, filename in ipairs(CONFIG_FILES) do
     local path = root .. "/" .. filename
     if vim.fn.filereadable(path) == 1 then
@@ -56,16 +87,6 @@ function M.get_commitlint_rules(root)
   end
 
   return nil
-end
-
--- Get the git root of the current working directory
--- @return string|nil git root path, or nil if not in a git repo
-function M.get_git_root()
-  local output = vim.fn.system("git rev-parse --show-toplevel 2>/dev/null")
-  if vim.v.shell_error ~= 0 then
-    return nil
-  end
-  return vim.trim(output)
 end
 
 return M

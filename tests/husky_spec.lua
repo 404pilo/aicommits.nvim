@@ -116,5 +116,109 @@ describe("aicommits.husky", function()
       local rules = husky.get_commitlint_rules(tmp_root)
       assert.is_nil(rules)
     end)
+
+    it("returns nil when package.json is malformed JSON", function()
+      mkdir(tmp_root .. "/.husky")
+      write_file(tmp_root .. "/package.json", "not valid json {{{")
+
+      local rules = husky.get_commitlint_rules(tmp_root)
+      assert.is_nil(rules)
+    end)
+
+    it("returns nil when config file exists but is empty", function()
+      mkdir(tmp_root .. "/.husky")
+      write_file(tmp_root .. "/commitlint.config.js", "")
+
+      local rules = husky.get_commitlint_rules(tmp_root)
+      assert.is_nil(rules)
+    end)
+
+    it("returns content when .commitlintrc.cjs exists", function()
+      mkdir(tmp_root .. "/.husky")
+      write_file(tmp_root .. "/.commitlintrc.cjs", "module.exports = { extends: ['@commitlint/config-conventional'] }")
+
+      local rules = husky.get_commitlint_rules(tmp_root)
+      assert.is_string(rules)
+      assert.matches("config%-conventional", rules)
+    end)
+
+    it("returns content when .commitlintrc.mjs exists", function()
+      mkdir(tmp_root .. "/.husky")
+      write_file(tmp_root .. "/.commitlintrc.mjs", "export default { extends: ['@commitlint/config-conventional'] }")
+
+      local rules = husky.get_commitlint_rules(tmp_root)
+      assert.is_string(rules)
+      assert.matches("config%-conventional", rules)
+    end)
+
+    it("prefers .commitlintrc.cjs over .commitlintrc.mjs", function()
+      mkdir(tmp_root .. "/.husky")
+      write_file(tmp_root .. "/.commitlintrc.cjs", "// from .commitlintrc.cjs")
+      write_file(tmp_root .. "/.commitlintrc.mjs", "// from .commitlintrc.mjs")
+
+      local rules = husky.get_commitlint_rules(tmp_root)
+      assert.matches("from .commitlintrc.cjs", rules)
+    end)
+  end)
+
+  describe("get_commitlint_rules() with CLI resolution", function()
+    it("returns resolved JSON when node_modules/.bin/commitlint exists and succeeds", function()
+      mkdir(tmp_root .. "/.husky")
+
+      -- Create a fake commitlint binary that prints resolved config JSON
+      local bin_dir = tmp_root .. "/node_modules/.bin"
+      mkdir(bin_dir)
+      local fake_bin = bin_dir .. "/commitlint"
+      write_file(fake_bin, "#!/bin/sh\necho '{\"rules\":{\"subject-case\":[2,\"never\",[\"sentence-case\"]],\"type-enum\":[2,\"always\",[\"feat\",\"fix\",\"chore\"]]},\"extends\":[\"@commitlint/config-conventional\"]}'")
+      os.execute("chmod +x " .. fake_bin)
+
+      local rules = husky.get_commitlint_rules(tmp_root)
+      assert.is_string(rules)
+      assert.matches("subject%-case", rules)
+      assert.matches("sentence%-case", rules)
+      assert.matches("type%-enum", rules)
+    end)
+
+    it("falls back to raw config file when node_modules/.bin/commitlint does not exist", function()
+      mkdir(tmp_root .. "/.husky")
+      write_file(tmp_root .. "/commitlint.config.js",
+        "module.exports = { extends: ['@commitlint/config-conventional'] }")
+      -- No node_modules/.bin/commitlint created
+
+      local rules = husky.get_commitlint_rules(tmp_root)
+      assert.is_string(rules)
+      assert.matches("config%-conventional", rules)
+    end)
+
+    it("falls back to raw config file when CLI exits with error", function()
+      mkdir(tmp_root .. "/.husky")
+      write_file(tmp_root .. "/commitlint.config.js",
+        "module.exports = { extends: ['@commitlint/config-conventional'] }")
+
+      -- Create a fake commitlint binary that fails
+      local bin_dir = tmp_root .. "/node_modules/.bin"
+      mkdir(bin_dir)
+      local fake_bin = bin_dir .. "/commitlint"
+      write_file(fake_bin, "#!/bin/sh\nexit 1")
+      os.execute("chmod +x " .. fake_bin)
+
+      local rules = husky.get_commitlint_rules(tmp_root)
+      assert.is_string(rules)
+      assert.matches("config%-conventional", rules)
+    end)
+
+    it("returns nil when CLI fails and no config file exists", function()
+      mkdir(tmp_root .. "/.husky")
+
+      -- Create a fake commitlint binary that fails
+      local bin_dir = tmp_root .. "/node_modules/.bin"
+      mkdir(bin_dir)
+      local fake_bin = bin_dir .. "/commitlint"
+      write_file(fake_bin, "#!/bin/sh\nexit 1")
+      os.execute("chmod +x " .. fake_bin)
+
+      local rules = husky.get_commitlint_rules(tmp_root)
+      assert.is_nil(rules)
+    end)
   end)
 end)
