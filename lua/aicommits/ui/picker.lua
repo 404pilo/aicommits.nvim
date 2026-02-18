@@ -163,7 +163,7 @@ end
 -- @return string Window title string
 function M.get_picker_title(opts)
   if opts and opts.commitlint_detected then
-    return " Select Commit Message · commitlint "
+    return " Select Commit Message · commitlint* "
   end
   return " Select Commit Message "
 end

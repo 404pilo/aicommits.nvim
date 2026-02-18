@@ -61,7 +61,7 @@ describe("picker", function()
 
     it("includes commitlint indicator when commitlint_detected is true", function()
       local title = picker.get_picker_title({ commitlint_detected = true })
-      assert.matches("commitlint", title)
+      assert.matches("commitlint%*", title)
     end)
   end)
 end)
