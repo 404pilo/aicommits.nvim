@@ -36,10 +36,8 @@ local function resolve_via_cli(root)
     return nil
   end
 
-  local cmd = string.format(
-    "(cd %s && ./node_modules/.bin/commitlint --print-config 2>/dev/null)",
-    vim.fn.shellescape(root)
-  )
+  local cmd =
+    string.format("(cd %s && ./node_modules/.bin/commitlint --print-config 2>/dev/null)", vim.fn.shellescape(root))
   local output = vim.fn.system(cmd)
 
   if vim.v.shell_error ~= 0 or vim.trim(output) == "" then

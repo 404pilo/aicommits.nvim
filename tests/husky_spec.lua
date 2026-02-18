@@ -169,7 +169,10 @@ describe("aicommits.husky", function()
       local bin_dir = tmp_root .. "/node_modules/.bin"
       mkdir(bin_dir)
       local fake_bin = bin_dir .. "/commitlint"
-      write_file(fake_bin, "#!/bin/sh\necho '{\"rules\":{\"subject-case\":[2,\"never\",[\"sentence-case\"]],\"type-enum\":[2,\"always\",[\"feat\",\"fix\",\"chore\"]]},\"extends\":[\"@commitlint/config-conventional\"]}'")
+      write_file(
+        fake_bin,
+        '#!/bin/sh\necho \'{"rules":{"subject-case":[2,"never",["sentence-case"]],"type-enum":[2,"always",["feat","fix","chore"]]},"extends":["@commitlint/config-conventional"]}\''
+      )
       os.execute("chmod +x " .. fake_bin)
 
       local rules = husky.get_commitlint_rules(tmp_root)
@@ -181,8 +184,10 @@ describe("aicommits.husky", function()
 
     it("falls back to raw config file when node_modules/.bin/commitlint does not exist", function()
       mkdir(tmp_root .. "/.husky")
-      write_file(tmp_root .. "/commitlint.config.js",
-        "module.exports = { extends: ['@commitlint/config-conventional'] }")
+      write_file(
+        tmp_root .. "/commitlint.config.js",
+        "module.exports = { extends: ['@commitlint/config-conventional'] }"
+      )
       -- No node_modules/.bin/commitlint created
 
       local rules = husky.get_commitlint_rules(tmp_root)
@@ -192,8 +197,10 @@ describe("aicommits.husky", function()
 
     it("falls back to raw config file when CLI exits with error", function()
       mkdir(tmp_root .. "/.husky")
-      write_file(tmp_root .. "/commitlint.config.js",
-        "module.exports = { extends: ['@commitlint/config-conventional'] }")
+      write_file(
+        tmp_root .. "/commitlint.config.js",
+        "module.exports = { extends: ['@commitlint/config-conventional'] }"
+      )
 
       -- Create a fake commitlint binary that fails
       local bin_dir = tmp_root .. "/node_modules/.bin"
