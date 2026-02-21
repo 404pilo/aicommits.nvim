@@ -16,7 +16,9 @@ end
 -- @param messages table Array of commit messages
 -- @param on_confirm function(message) Called when user confirms/selects a message
 -- @param on_cancel function() Called when user cancels
-function M.show_commit_prompt(messages, on_confirm, on_cancel)
+-- @param opts table Optional hints (e.g. { commitlint_detected = true })
+function M.show_commit_prompt(messages, on_confirm, on_cancel, opts)
+  opts = opts or {}
   if #messages == 0 then
     on_cancel()
     return
@@ -29,7 +31,7 @@ function M.show_commit_prompt(messages, on_confirm, on_cancel)
     if should_use_custom_picker() then
       -- Use custom picker for single message with edit option
       local picker = require("aicommits.ui.picker")
-      picker.show({ message }, {}, {
+      picker.show({ message }, opts, {
         on_select = function(selected)
           on_confirm(selected)
         end,
@@ -60,7 +62,7 @@ function M.show_commit_prompt(messages, on_confirm, on_cancel)
     -- Multiple messages: use custom picker or fallback
     if should_use_custom_picker() then
       local picker = require("aicommits.ui.picker")
-      picker.show(messages, {}, {
+      picker.show(messages, opts, {
         on_select = on_confirm,
         on_edit = function(selected)
           M.show_edit_prompt(selected, on_confirm, on_cancel)

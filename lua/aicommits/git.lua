@@ -1,10 +1,20 @@
 -- Git operations for aicommits.nvim
 local M = {}
 
+-- Get the git root of the current working directory
+-- @return string|nil git root path, or nil if not in a git repo
+function M.get_git_root()
+  local result = vim.system({ "git", "rev-parse", "--show-toplevel" }, { stderr = false }):wait()
+  if result.code ~= 0 then
+    return nil
+  end
+  return vim.trim(result.stdout)
+end
+
 -- Check if currently in a git repository
 function M.is_git_repo()
-  local result = vim.fn.system({ "git", "rev-parse", "--is-inside-work-tree" })
-  return vim.v.shell_error == 0
+  local result = vim.system({ "git", "rev-parse", "--is-inside-work-tree" }, { stderr = false }):wait()
+  return result.code == 0
 end
 
 -- Check if there are staged changes
@@ -32,20 +42,20 @@ end
 
 -- Get SHA of last commit
 function M.get_last_commit_sha()
-  local output = vim.fn.system({ "git", "log", "-1", "--pretty=%H" })
-  if vim.v.shell_error ~= 0 then
+  local result = vim.system({ "git", "log", "-1", "--pretty=%H" }, { stderr = false }):wait()
+  if result.code ~= 0 then
     return nil
   end
-  return vim.trim(output)
+  return vim.trim(result.stdout)
 end
 
 -- Check if repository has a remote configured
 function M.has_remote()
-  local output = vim.fn.system({ "git", "remote", "-v" })
-  if vim.v.shell_error ~= 0 then
+  local result = vim.system({ "git", "remote", "-v" }, { stderr = false }):wait()
+  if result.code ~= 0 then
     return false
   end
-  return output ~= "" and output ~= "\n"
+  return result.stdout ~= "" and result.stdout ~= "\n"
 end
 
 -- Get number of staged changes (files + hunks)

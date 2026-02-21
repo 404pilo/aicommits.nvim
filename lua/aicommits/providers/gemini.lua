@@ -60,7 +60,7 @@ function M:generate_commit_message(diff, config, callback)
   local endpoint = string.format("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", model)
 
   -- Build system prompt
-  local system_prompt = prompts.build_system_prompt(max_length)
+  local system_prompt = prompts.build_system_prompt(max_length, config.commitlint_config)
 
   -- Build Gemini API request body (contents array format)
   local request_body = {

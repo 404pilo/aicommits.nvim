@@ -108,6 +108,29 @@ describe("aicommits.git", function()
     end)
   end)
 
+  describe("get_git_root()", function()
+    it("returns a string when in a git repository", function()
+      if not git.is_git_repo() then
+        pending("Not in a git repository, skipping test")
+        return
+      end
+
+      local root = git.get_git_root()
+      assert.is_string(root)
+    end)
+
+    it("returns a path that contains a .git directory", function()
+      if not git.is_git_repo() then
+        pending("Not in a git repository, skipping test")
+        return
+      end
+
+      local root = git.get_git_root()
+      assert.is_string(root)
+      assert.equals(1, vim.fn.isdirectory(root .. "/.git"))
+    end)
+  end)
+
   describe("refresh_git_clients()", function()
     it("executes without error", function()
       if not git.is_git_repo() then

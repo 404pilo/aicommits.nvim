@@ -2,6 +2,7 @@
 local M = {}
 
 local git = require("aicommits.git")
+local husky = require("aicommits.husky")
 local provider_manager = require("aicommits.providers")
 local ui = require("aicommits.ui")
 local picker = require("aicommits.ui.picker")
@@ -51,6 +52,21 @@ function M.generate_and_commit()
     local config = require("aicommits.config")
     local provider_config = config.get("providers." .. provider.name)
 
+    -- Inject commitlint rules if husky is enabled and detected
+    if config.get("husky.enabled") then
+      local git_root = git.get_git_root()
+      if git_root then
+        local commitlint_config, rules_resolved = husky.get_commitlint_rules(git_root)
+        if commitlint_config then
+          provider_config = vim.tbl_extend(
+            "force",
+            provider_config,
+            { commitlint_config = commitlint_config, commitlint_resolved = rules_resolved }
+          )
+        end
+      end
+    end
+
     provider:generate_commit_message(diff_data.diff, provider_config, function(err, messages)
       if err then
         picker.close_status()
@@ -65,6 +81,7 @@ function M.generate_and_commit()
       end
 
       -- Step 5: Show user selection UI (status window auto-closes)
+      local ui_opts = { commitlint_detected = provider_config.commitlint_resolved == true }
       ui.show_commit_prompt(
         messages,
         -- On confirm: create commit
@@ -91,7 +108,8 @@ function M.generate_and_commit()
         -- On cancel: abort (picker closes itself)
         function()
           -- Status already closed by picker, no action needed
-        end
+        end,
+        ui_opts
       )
     end)
   end)

@@ -64,7 +64,7 @@ function M:generate_commit_message(diff, config, callback)
     messages = {
       {
         role = "system",
-        content = prompts.build_system_prompt(max_length),
+        content = prompts.build_system_prompt(max_length, config.commitlint_config),
       },
       {
         role = "user",

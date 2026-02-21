@@ -72,6 +72,11 @@ M.defaults = {
     },
   },
 
+  -- Husky Integration
+  husky = {
+    enabled = true, -- Auto-detect commitlint config from .husky projects (set to false to disable)
+  },
+
   -- Debug Mode
   debug = false,
 
