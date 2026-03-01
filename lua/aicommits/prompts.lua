@@ -37,10 +37,6 @@ function M.build_system_prompt(max_length, commitlint_config)
   if commitlint_config then
     table.insert(parts, "IMPORTANT: The following commitlint rules are STRICTLY ENFORCED in this repository.")
     table.insert(parts, "You MUST follow every rule exactly. Violating any rule is not acceptable.")
-    table.insert(
-      parts,
-      "Pay special attention to `subject-case` (never sentence-case or start-case) and `type-enum` (only listed types allowed)."
-    )
     table.insert(parts, commitlint_config)
     table.insert(parts, "Double-check your message against every rule above before responding.")
   end
