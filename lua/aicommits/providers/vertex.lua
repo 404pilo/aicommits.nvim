@@ -109,10 +109,13 @@ function M:generate_commit_message(diff, config, callback)
     local temperature = config.temperature or 0.7
     local max_tokens = config.max_tokens or 200
 
-    -- Build Vertex AI endpoint
+    -- Build Vertex AI endpoint (global has no region prefix in hostname)
+    local host = location == "global"
+      and "aiplatform.googleapis.com"
+      or location .. "-aiplatform.googleapis.com"
     local endpoint = string.format(
-      "https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:generateContent",
-      location,
+      "https://%s/v1/projects/%s/locations/%s/publishers/google/models/%s:generateContent",
+      host,
       project,
       location,
       model
