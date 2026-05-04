@@ -110,9 +110,7 @@ function M:generate_commit_message(diff, config, callback)
     local max_tokens = config.max_tokens or 200
 
     -- Build Vertex AI endpoint (global has no region prefix in hostname)
-    local host = location == "global"
-      and "aiplatform.googleapis.com"
-      or location .. "-aiplatform.googleapis.com"
+    local host = location == "global" and "aiplatform.googleapis.com" or location .. "-aiplatform.googleapis.com"
     local endpoint = string.format(
       "https://%s/v1/projects/%s/locations/%s/publishers/google/models/%s:generateContent",
       host,
