@@ -24,10 +24,16 @@ function M.build_system_prompt(max_length, commitlint_config)
   }
 
   local parts = {
-    "Generate a concise git commit message written in present tense for the following code diff with the given specifications below:",
+    "Generate a single-sentence git commit message in present tense for the following diff.",
+    "The message MUST be no more than 12 words. Be extremely brief.",
     "Message language: en",
     string.format("Commit message must be a maximum of %d characters.", max_length),
     "Exclude anything unnecessary such as translation. Your entire response will be passed directly into git commit.",
+    "Strictly follow Conventional Commits 1.0.0 spec. The message MUST pass commitlint with @commitlint/config-conventional rules:",
+    "- Subject line: lowercase, no period at end, imperative mood, no trailing whitespace.",
+    "- Type MUST be one of the allowed types below. Scope is optional and lowercase.",
+    "- Header (type + scope + subject) must not exceed " .. tostring(max_length) .. " characters total.",
+    "- Do NOT include a body or footer. Output only the single header line.",
     "Choose a type from the type-to-description JSON below that best describes the git diff:",
     vim.json.encode(commit_types),
     "The output response must be in format:",
