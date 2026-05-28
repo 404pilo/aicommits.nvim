@@ -1,0 +1,10 @@
+FINDINGS: critical=0 important=0 minor=0
+
+critical: []
+important: []
+minor: []
+
+resolution_check_round_6:
+  - i1: RESOLVED — vim.fn.executable stub added to vertex summarize() before_each/after_each
+
+LOOP_STATUS: CONVERGED

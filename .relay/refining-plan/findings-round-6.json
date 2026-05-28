@@ -1,0 +1,19 @@
+FINDINGS: critical=0 important=1 minor=0
+
+critical: []
+
+important:
+  - id: i1
+    task: "Task 4: provider:summarize() — vertex.lua"
+    step: "Step 1 (vertex summarize() test before_each)"
+    concern: "before_each does not stub vim.fn.executable. generate_token() calls is_gcloud_available() -> vim.fn.executable('gcloud') before reaching jobstart. On machines without gcloud, returns 0, error fires, jobstart stub never called — tests fail environment-dependently."
+    recommendation: "Mirror existing pattern at tests/vertex_spec.lua lines 214-225: save original_executable, override to return 1 for 'gcloud', restore in after_each."
+
+minor: []
+
+resolution_check_round_5:
+  - c1: PARTIAL (jobstart stubbed correctly but prerequisite vim.fn.executable guard missing)
+  - m1: RESOLVED
+  - m2: RESOLVED
+
+LOOP_STATUS: NEEDS_FIX

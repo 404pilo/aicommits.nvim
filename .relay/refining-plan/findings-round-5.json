@@ -1,0 +1,26 @@
+FINDINGS: critical=1 important=0 minor=2
+
+critical:
+  - id: c1
+    task: "Task 4: provider:summarize() — vertex.lua"
+    step: "Step 1 (vertex summarize() test — both success and error cases)"
+    concern: "Test stubs vim.fn.system + vim.v.shell_error but the real generate_token() in vertex.lua uses vim.fn.jobstart (async, on_stdout/on_exit). The vim.fn.system stub does nothing for jobstart; callback never fires synchronously. Tests will not assert what they claim."
+    recommendation: "Stub vim.fn.jobstart instead, mirroring the pattern at tests/vertex_spec.lua lines 262-277 — set opts.on_stdout to inject fake token array and call opts.on_exit with exit_code 0. Reset M._cached_token / M._token_expiry in before_each/after_each."
+
+minor:
+  - id: m1
+    task: "Task 8: input/rich.lua — full prepare() pipeline"
+    step: "Step 3, total_tasks == 0 early-return"
+    concern: "When all files are small-inline, callback fires but picker.show_status('Analyzing staged diff...') is never closed. Status window stays open."
+    recommendation: "Add picker.close_status() before callback(nil, payload) in the total_tasks == 0 branch."
+
+  - id: m2
+    task: "Task 4: provider:summarize() — vertex.lua"
+    step: "Step 1 (vertex summarize() test, success case)"
+    concern: "Test declares 'local orig_generate_token' then comments out the stub — dangling unused local."
+    recommendation: "Remove the unused 'local orig_generate_token' declaration."
+
+resolution_check_round_4:
+  - i1: RESOLVED (vertex/openai tests added, but vertex test has a new bug — see c1)
+
+LOOP_STATUS: NEEDS_FIX
