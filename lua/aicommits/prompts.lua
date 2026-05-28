@@ -78,4 +78,40 @@ function M.process_messages(messages)
   return result
 end
 
+-- Build a prompt pair for summarization calls
+-- @param kind  string  "chunk" | "file_rollup" | "small_batch"
+-- @param payload string  The diff text or batch of chunk summaries
+-- @param opts  table   { file_path = string|nil }
+-- @return table { system = string, user = string }
+function M.build_summary_prompt(kind, payload, opts)
+  opts = opts or {}
+  if kind == "chunk" then
+    return {
+      system = "You are a code-change summarizer. Produce a concise bullet-point summary"
+        .. " (<=5 bullets, no markdown headers) of what this diff chunk changes."
+        .. " Be specific: name functions, variables, or config keys that are added,"
+        .. " removed, or modified.",
+      user = string.format("File: %s\n\n%s", opts.file_path or "(unknown)", payload),
+    }
+  elseif kind == "file_rollup" then
+    return {
+      system = "You are a code-change summarizer. Given the following chunk summaries"
+        .. " for a single file, produce a single concise paragraph (<=4 sentences)"
+        .. " describing the net effect of the changes.",
+      user = string.format(
+        "File: %s\n\nChunk summaries:\n%s", opts.file_path or "(unknown)", payload),
+    }
+  elseif kind == "small_batch" then
+    return {
+      system = "You are a code-change summarizer. Given the following diffs for multiple"
+        .. " small files, produce one concise bullet per file"
+        .. " (format: '- <path>: <change summary>') describing the net change."
+        .. " Do not merge bullets across files.",
+      user = payload,
+    }
+  else
+    error(string.format("build_summary_prompt: unknown kind '%s'", tostring(kind)))
+  end
+end
+
 return M
