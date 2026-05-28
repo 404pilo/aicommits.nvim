@@ -198,5 +198,26 @@ describe("aicommits.git", function()
 
       vim.fn.system = orig_system
     end)
+
+    -- GAP: git-get-staged-stat-synchronous-callback
+    it("invokes the callback synchronously in the same call frame", function()
+      local orig_system = vim.fn.system
+      vim.fn.system = function(_args)
+        vim.v.shell_error = 0
+        return " foo.lua | 2 ++\n 1 file changed\n"
+      end
+
+      -- If the callback fires synchronously, `invoked` will be true immediately
+      -- after the call returns, before we even reach the assertion below.
+      local invoked = false
+      require("aicommits.git").get_staged_stat(function(_err, _stat)
+        invoked = true
+      end)
+
+      -- No asynchronous waiting: the flag must already be set.
+      assert.is_true(invoked)
+
+      vim.fn.system = orig_system
+    end)
   end)
 end)
