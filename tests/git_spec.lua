@@ -144,4 +144,59 @@ describe("aicommits.git", function()
       end)
     end)
   end)
+
+  describe("get_staged_stat()", function()
+    -- vim.v is a read-only Neovim proxy; replace it with a plain table so tests
+    -- can write shell_error without errors. [inferred]
+    local orig_vim_v
+
+    before_each(function()
+      orig_vim_v = vim.v
+      vim.v = setmetatable({}, { __newindex = rawset, __index = orig_vim_v })
+    end)
+
+    after_each(function()
+      vim.v = orig_vim_v
+    end)
+
+    it("calls callback with a string when there are staged changes", function()
+      -- Stub vim.fn.system to return a fake stat line
+      local orig_system = vim.fn.system
+
+      vim.fn.system = function(_args)
+        vim.v.shell_error = 0
+        return " foo.lua | 3 +++\n 1 file changed, 3 insertions(+)\n"
+      end
+
+      local result_err, result_stat
+      require("aicommits.git").get_staged_stat(function(err, stat)
+        result_err  = err
+        result_stat = stat
+      end)
+
+      assert.is_nil(result_err)
+      assert.is_string(result_stat)
+      assert.is_truthy(result_stat:match("file changed"))
+
+      vim.fn.system = orig_system
+    end)
+
+    it("calls callback with error when git fails", function()
+      local orig_system = vim.fn.system
+      vim.fn.system = function(_args)
+        vim.v.shell_error = 1
+        return ""
+      end
+
+      local result_err
+      require("aicommits.git").get_staged_stat(function(err, _)
+        result_err = err
+      end)
+
+      assert.is_string(result_err)
+      assert.is_truthy(result_err:match("[Ss]tat"))
+
+      vim.fn.system = orig_system
+    end)
+  end)
 end)

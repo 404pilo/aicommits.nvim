@@ -138,6 +138,17 @@ function M.get_staged_diff(callback)
   })
 end
 
+-- Get git diff --cached --stat output
+-- @param callback function(error, stat_string)
+function M.get_staged_stat(callback)
+  local output = vim.fn.system({ "git", "diff", "--cached", "--stat" })
+  if vim.v.shell_error ~= 0 then
+    callback("Failed to get staged stat", nil)
+    return
+  end
+  callback(nil, output)
+end
+
 -- Create a git commit with the given message
 -- @param message string The commit message
 -- @param callback function(error) Callback with error or nil on success
