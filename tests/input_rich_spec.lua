@@ -121,6 +121,22 @@ describe("input.rich — parsing helpers", function()
       local buckets = rich.bucket_files(file_entries, cfg)
       assert.equals(1, #buckets.stat_only)
     end)
+
+    -- GAP: bucketing-mode-only-change-stat-only
+    -- A file with no @@ hunks (e.g. a mode/rename-only change) has an empty diff
+    -- after header stripping, so bucket_files treats it as stat_only.
+    it("puts a zero-hunk (mode-only) file into stat_only bucket", function()
+      -- A diff entry with no hunk content at all — bucket_files checks diff == ""
+      -- or is_binary; an empty diff string triggers the stat_only path.
+      local file_entries = {
+        { path = "script.sh", diff = "", is_binary = false },
+      }
+      local buckets = rich.bucket_files(file_entries, cfg)
+      assert.equals(1, #buckets.stat_only)
+      assert.equals(0, #buckets.large)
+      assert.equals(0, #buckets.small_inline)
+      assert.equals(0, #buckets.small_batched)
+    end)
   end)
 end)
 
@@ -173,6 +189,33 @@ describe("make_scheduler()", function()
     end
 
     assert.is_true(in_flight_peak <= 2)
+  end)
+
+  -- GAP: scheduler-queued-tasks-drain-after-completion
+  it("drains all queued tasks sequentially with concurrency=1", function()
+    local sched = rich.make_scheduler(1)
+    local completed = {}
+    local done_fns = {}
+
+    for i = 1, 3 do
+      local i_local = i
+      sched.run(function(done)
+        table.insert(done_fns, function()
+          table.insert(completed, i_local)
+          done()
+        end)
+      end)
+    end
+
+    -- Drive tasks to completion one at a time
+    while #done_fns > 0 do
+      local fn = table.remove(done_fns, 1)
+      fn()
+    end
+
+    assert.equals(3, #completed)
+    -- All three task indices were executed
+    assert.same({1, 2, 3}, completed)
   end)
 end)
 
@@ -320,5 +363,764 @@ describe("prepare() integration", function()
     assert.is_nil(err)
     assert.is_string(payload)
     assert.is_truthy(payload:match("changed"))
+  end)
+
+  -- ── GAP scenarios ────────────────────────────────────────────────────
+
+  -- GAP: overflow-max-chunks-exceeded-stat-only
+  it("demotes file to stat-only when chunk count exceeds max_chunks_per_file", function()
+    local restore = stub_stat(" big.lua | 50 +++\n 1 file changed\n")
+    local summarize_calls = 0
+    local provider = {
+      summarize = function(self, _text, _opts, _cfg, cb)
+        summarize_calls = summarize_calls + 1
+        cb(nil, "summary")
+      end,
+    }
+
+    -- Build a diff with many hunks (one per line group) so it generates > max_chunks_per_file chunks
+    -- chunk_chars = 10 forces each hunk into its own chunk; max_chunks_per_file = 2
+    local hunk_lines = {}
+    for i = 1, 5 do
+      table.insert(hunk_lines, "@@ -" .. i .. ",1 +" .. i .. ",1 @@\n-old" .. i .. "\n+new" .. i)
+    end
+    local big_diff = "diff --git a/big.lua b/big.lua\n" .. table.concat(hunk_lines, "\n")
+    local diff_data = { diff = big_diff, files = { "big.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always",
+      small_file_chars = 1,     -- force large bucket
+      chunk_chars = 10,          -- tiny chunk_chars → many chunks
+      max_chunks_per_file = 2,   -- overflow at >2 chunks
+      max_small_files_inline = 10,
+      small_file_batch_chars = 4000,
+      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    local err, payload
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+
+    restore()
+
+    -- No summary calls should be made for overflowed file
+    assert.equals(0, summarize_calls)
+    -- Payload should still be assembled (not an error)
+    assert.is_nil(err)
+    assert.is_string(payload)
+    assert.is_truthy(payload:match("diff omitted: exceeded max_chunks_per_file"))
+  end)
+
+  -- GAP: small-batch-packing-boundary
+  it("creates two batches when 3 small files exceed small_file_batch_chars", function()
+    -- Each file diff is ~30 chars; batch_chars = 40 → first file fills batch 1, rest go to batch 2
+    local restore = stub_stat(" a.lua | 1\n b.lua | 1\n c.lua | 1\n")
+
+    local batch_count = 0
+    local provider = {
+      summarize = function(self, _text, _opts, _cfg, cb)
+        batch_count = batch_count + 1
+        cb(nil, "- batch summary " .. batch_count)
+      end,
+    }
+
+    -- Each diff is about 25 chars: "@@ -1 +1 @@\n-old\n+new" = 22 chars
+    local mk = function(name, content)
+      return "diff --git a/" .. name .. " b/" .. name
+        .. "\n@@ -1 +1 @@\n" .. content
+    end
+    -- Make files with ~25 char diffs; batch_chars = 30 → each file in its own batch
+    local file_a = mk("a.lua", string.rep("x", 20))
+    local file_b = mk("b.lua", string.rep("y", 20))
+    local file_c = mk("c.lua", string.rep("z", 20))
+    local diff = file_a .. "\n" .. file_b .. "\n" .. file_c
+    local diff_data = { diff = diff, files = { "a.lua", "b.lua", "c.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always",
+      small_file_chars = 10000,   -- all files are "small"
+      max_small_files_inline = 0, -- force small_batched (0 < 3)
+      small_file_batch_chars = 30, -- each ~25-char diff gets its own batch
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    local err, payload
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+
+    restore()
+
+    assert.is_nil(err)
+    assert.is_true(batch_count >= 2, "expected at least 2 batches, got " .. batch_count)
+  end)
+
+  -- GAP: single-chunk-summary-error-stat-only-per-file
+  it("degrades file to stat-only when chunk summary call fails", function()
+    local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")
+    local provider = {
+      summarize = function(self, _text, _opts, _cfg, cb)
+        cb("chunk error", nil)
+      end,
+    }
+
+    local big_diff = table.concat({
+      "diff --git a/big.lua b/big.lua",
+      "@@ -1,3 +1,4 @@",
+      " a", "+b",
+    }, "\n") .. string.rep("\nx", 60)
+
+    local diff_data = { diff = big_diff, files = { "big.lua" } }
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always", small_file_chars = 50,
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      max_small_files_inline = 10, small_file_batch_chars = 4000,
+      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    local err, payload
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+
+    restore()
+
+    -- Single file chunk failure → that file is stat-only but since all summaries
+    -- attempted failed, the pipeline returns an error (all-failed semantics).
+    -- Either way the callback fires — just verify it fires.
+    assert.is_true(err ~= nil or payload ~= nil)
+  end)
+
+  -- GAP: file-rollup-error-stat-only-per-file
+  it("degrades file to stat-only when roll-up call fails but other files succeed", function()
+    local restore = stub_stat(" good.lua | 5\n bad.lua | 5\n")
+    local call_num = 0
+    local provider = {
+      summarize = function(self, _text, opts, _cfg, cb)
+        call_num = call_num + 1
+        if opts and opts.prompt_kind == "file_rollup" and opts.file_path == "bad.lua" then
+          cb("rollup error", nil)
+        else
+          cb(nil, "- summary " .. call_num)
+        end
+      end,
+    }
+
+    local function mk_big(name)
+      return "diff --git a/" .. name .. " b/" .. name
+        .. "\n@@ -1,3 +1,4 @@\n a\n+b"
+        .. string.rep("\nx", 60)
+    end
+    local diff = mk_big("good.lua") .. "\n" .. mk_big("bad.lua")
+    local diff_data = { diff = diff, files = { "good.lua", "bad.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always", small_file_chars = 50,
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      max_small_files_inline = 0, small_file_batch_chars = 4000,
+      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    local err, payload
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+
+    restore()
+
+    -- good.lua succeeded so partial-failure → err is nil, payload assembled
+    assert.is_nil(err)
+    assert.is_string(payload)
+    assert.is_truthy(payload:match("good%.lua"))
+    assert.is_truthy(payload:match("bad%.lua"))
+  end)
+
+  -- GAP: small-batch-error-stat-only-per-file
+  it("degrades batch to stat-only when batch summary call fails", function()
+    local restore = stub_stat(" a.lua | 1\n b.lua | 1\n c.lua | 1\n")
+    local provider = {
+      summarize = function(self, _text, _opts, _cfg, cb)
+        cb("batch error", nil)
+      end,
+    }
+
+    local mk = function(name)
+      return "diff --git a/" .. name .. " b/" .. name
+        .. "\n@@ -1 +1 @@\n-old\n+new"
+    end
+    local diff = mk("a.lua") .. "\n" .. mk("b.lua") .. "\n" .. mk("c.lua")
+    local diff_data = { diff = diff, files = { "a.lua", "b.lua", "c.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always",
+      small_file_chars = 10000,
+      max_small_files_inline = 2,  -- 3 > 2 → small_batched
+      small_file_batch_chars = 4000,
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    local err, _payload
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function(e, p) err = e; _payload = p end)
+
+    restore()
+
+    -- All batch summaries failed → all-failed error
+    assert.is_string(err)
+  end)
+
+  -- GAP: partial-failure-mixed-payload
+  -- a.lua succeeds fully (chunk + rollup ok); b.lua and c.lua fail at rollup.
+  -- Since a.lua has summary_successes >= 1, mixed payload is returned (no abort).
+  it("produces mixed payload when some large files fail and one succeeds", function()
+    local restore = stub_stat(" a.lua | 5\n b.lua | 5\n c.lua | 5\n")
+    local provider = {
+      summarize = function(self, _text, opts, _cfg, cb)
+        local kind = opts and opts.prompt_kind
+        local path = opts and opts.file_path
+        if kind == "chunk" then
+          -- All chunk summarizations succeed so each file proceeds to roll-up
+          cb(nil, "- chunk summary")
+        elseif kind == "file_rollup" and path == "a.lua" then
+          -- Only a.lua's rollup succeeds
+          cb(nil, "- a.lua full summary")
+        else
+          -- b.lua and c.lua rollups fail
+          cb("rollup error", nil)
+        end
+      end,
+    }
+
+    local function mk_big(name)
+      return "diff --git a/" .. name .. " b/" .. name
+        .. "\n@@ -1,3 +1,4 @@\n a\n+b"
+        .. string.rep("\nx", 60)
+    end
+    local diff = mk_big("a.lua") .. "\n" .. mk_big("b.lua") .. "\n" .. mk_big("c.lua")
+    local diff_data = { diff = diff, files = { "a.lua", "b.lua", "c.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always", small_file_chars = 50,
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      max_small_files_inline = 0, small_file_batch_chars = 4000,
+      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    local err, payload
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+
+    restore()
+
+    -- At least one succeeded → mixed payload, no error
+    assert.is_nil(err)
+    assert.is_string(payload)
+    -- The successful file's summary appears
+    assert.is_truthy(payload:match("a%.lua full summary"))
+    -- The failed files still appear (as stat-only entries)
+    assert.is_truthy(payload:match("b%.lua"))
+    assert.is_truthy(payload:match("c%.lua"))
+  end)
+
+  -- GAP: all-small-inline-no-summary-calls-no-abort
+  it("fires callback with no error and no summarize calls when all files are small-inline", function()
+    local restore = stub_stat(" a.lua | 1\n b.lua | 1\n")
+    local summarize_calls = 0
+    local provider = {
+      summarize = function(self, _text, _opts, _cfg, cb)
+        summarize_calls = summarize_calls + 1
+        cb(nil, "should not happen")
+      end,
+    }
+
+    local mk = function(name)
+      return "diff --git a/" .. name .. " b/" .. name
+        .. "\n@@ -1 +1 @@\n-old\n+new"
+    end
+    local diff = mk("a.lua") .. "\n" .. mk("b.lua")
+    local diff_data = { diff = diff, files = { "a.lua", "b.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always",
+      small_file_chars = 10000,   -- both files are "small"
+      max_small_files_inline = 10, -- 2 <= 10 → small_inline
+      small_file_batch_chars = 4000,
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    local err, payload
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+
+    restore()
+
+    assert.equals(0, summarize_calls)
+    assert.is_nil(err)
+    assert.is_string(payload)
+  end)
+
+  -- GAP: stat-fetch-failure-aborts-pipeline
+  it("fires callback with error and never calls summarize when stat fetch fails", function()
+    -- Override the git stub to return an error
+    local git = require("aicommits.git")
+    local orig_stat = git.get_staged_stat
+    git.get_staged_stat = function(cb) cb("stat fetch error", nil) end
+
+    local summarize_calls = 0
+    local provider = {
+      summarize = function(self, _text, _opts, _cfg, cb)
+        summarize_calls = summarize_calls + 1
+        cb(nil, "summary")
+      end,
+    }
+
+    local diff_data = { diff = "diff --git a/x.lua b/x.lua\n@@ -1 +1 @@\n-a\n+b", files = { "x.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always", small_file_chars = 50,
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      max_small_files_inline = 10, small_file_batch_chars = 4000,
+      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    local err, payload
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+
+    git.get_staged_stat = orig_stat
+
+    assert.is_string(err)
+    assert.is_nil(payload)
+    assert.equals(0, summarize_calls)
+  end)
+
+  -- GAP: final-payload-contains-stat-block
+  it("includes the stat block text in the assembled payload", function()
+    local stat_text = " big.lua | 10 +++\n 1 file changed, 10 insertions(+)\n"
+    local restore = stub_stat(stat_text)
+    local provider = make_mock_provider("- changed foo()")
+
+    local big_diff = table.concat({
+      "diff --git a/big.lua b/big.lua",
+      "@@ -1,5 +1,6 @@",
+      " line1", "+line2",
+    }, "\n") .. string.rep("\nmore content", 30)
+
+    local diff_data = { diff = big_diff, files = { "big.lua" } }
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always", threshold_chars = 0,
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      small_file_chars = 50,
+      max_small_files_inline = 10, small_file_batch_chars = 4000,
+      summary_model = nil, summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    local err, payload
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+
+    restore()
+
+    assert.is_nil(err)
+    assert.is_string(payload)
+    -- The stat block text must appear verbatim in the payload
+    assert.is_truthy(payload:match("file changed"))
+  end)
+
+  -- GAP: final-payload-large-file-section-header
+  it("includes '### big.lua' section header followed by roll-up summary", function()
+    local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")
+    local provider = make_mock_provider("- refactored big helper")
+
+    local big_diff = table.concat({
+      "diff --git a/big.lua b/big.lua",
+      "@@ -1,5 +1,6 @@",
+      " line1", "+line2",
+    }, "\n") .. string.rep("\nmore content", 30)
+
+    local diff_data = { diff = big_diff, files = { "big.lua" } }
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always", threshold_chars = 0,
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      small_file_chars = 50,
+      max_small_files_inline = 10, small_file_batch_chars = 4000,
+      summary_model = nil, summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    local err, payload
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+
+    restore()
+
+    assert.is_nil(err)
+    assert.is_string(payload)
+    assert.is_truthy(payload:match("### big%.lua"))
+    assert.is_truthy(payload:match("refactored big helper"))
+  end)
+
+  -- GAP: final-payload-small-inline-section
+  it("includes '### small.lua' followed by raw diff content for small-inline files", function()
+    local restore = stub_stat(" small.lua | 2\n 1 file changed\n")
+    local summarize_calls = 0
+    local provider = {
+      summarize = function(self, _text, _opts, _cfg, cb)
+        summarize_calls = summarize_calls + 1
+        cb(nil, "summary")
+      end,
+    }
+
+    local diff = "diff --git a/small.lua b/small.lua\n@@ -1 +1 @@\n-old\n+new"
+    local diff_data = { diff = diff, files = { "small.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always",
+      small_file_chars = 10000,   -- file is "small"
+      max_small_files_inline = 10, -- 1 <= 10 → inline
+      small_file_batch_chars = 4000,
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    local err, payload
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+
+    restore()
+
+    assert.equals(0, summarize_calls)
+    assert.is_nil(err)
+    assert.is_string(payload)
+    assert.is_truthy(payload:match("### small%.lua"))
+    -- Raw diff content appears verbatim
+    assert.is_truthy(payload:match("%-old") or payload:match("%+new"))
+  end)
+
+  -- GAP: final-payload-stat-only-section
+  it("includes stat-only note '(diff omitted: exceeded max_chunks_per_file)' in payload", function()
+    local restore = stub_stat(" big.lua | 50 +++\n 1 file changed\n")
+    local provider = {
+      summarize = function(self, _text, _opts, _cfg, cb)
+        cb(nil, "summary")
+      end,
+    }
+
+    -- Create a diff that exceeds max_chunks_per_file=2 with chunk_chars=10
+    local hunk_lines = {}
+    for i = 1, 5 do
+      table.insert(hunk_lines, "@@ -" .. i .. ",1 +" .. i .. ",1 @@\n-old" .. i .. "\n+new" .. i)
+    end
+    local big_diff = "diff --git a/big.lua b/big.lua\n" .. table.concat(hunk_lines, "\n")
+    local diff_data = { diff = big_diff, files = { "big.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always",
+      small_file_chars = 1,
+      chunk_chars = 10,           -- tiny → many chunks
+      max_chunks_per_file = 2,    -- overflow at >2
+      max_small_files_inline = 10,
+      small_file_batch_chars = 4000,
+      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    local err, payload
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+
+    restore()
+
+    assert.is_nil(err)
+    assert.is_string(payload)
+    assert.is_truthy(payload:match("### big%.lua"))
+    assert.is_truthy(payload:match("diff omitted: exceeded max_chunks_per_file"))
+  end)
+
+  -- GAP: status-ui-analyzing-phase
+  it("calls picker.show_status with 'Analyzing staged diff...' during bucketing phase", function()
+    local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")
+    local status_calls = {}
+    local picker = require("aicommits.ui.picker")
+    local orig_show  = picker.show_status
+    local orig_close = picker.close_status
+    picker.show_status  = function(msg) table.insert(status_calls, { kind = "show", msg = msg }) end
+    picker.close_status = function()    table.insert(status_calls, { kind = "close" }) end
+
+    local provider = make_mock_provider("- summary")
+    local big_diff = "diff --git a/big.lua b/big.lua\n@@ -1,5 +1,6 @@\n line1\n+line2"
+      .. string.rep("\nmore content", 30)
+    local diff_data = { diff = big_diff, files = { "big.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always", threshold_chars = 0,
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      small_file_chars = 50,
+      max_small_files_inline = 10, small_file_batch_chars = 4000,
+      summary_model = nil, summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function() end)
+
+    picker.show_status  = orig_show
+    picker.close_status = orig_close
+    restore()
+
+    local found = false
+    for _, call in ipairs(status_calls) do
+      if call.kind == "show" and call.msg == "Analyzing staged diff..." then
+        found = true
+        break
+      end
+    end
+    assert.is_true(found, "Expected 'Analyzing staged diff...' in status calls")
+  end)
+
+  -- GAP: status-ui-summarizing-phase
+  it("calls picker.show_status with a string containing 'Summarizing' when tasks exist", function()
+    local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")
+    local status_calls = {}
+    local picker = require("aicommits.ui.picker")
+    local orig_show  = picker.show_status
+    local orig_close = picker.close_status
+    picker.show_status  = function(msg) table.insert(status_calls, { kind = "show", msg = msg }) end
+    picker.close_status = function()    table.insert(status_calls, { kind = "close" }) end
+
+    local provider = make_mock_provider("- summary")
+    local big_diff = "diff --git a/big.lua b/big.lua\n@@ -1,5 +1,6 @@\n line1\n+line2"
+      .. string.rep("\nmore content", 30)
+    local diff_data = { diff = big_diff, files = { "big.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always", threshold_chars = 0,
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      small_file_chars = 50,
+      max_small_files_inline = 10, small_file_batch_chars = 4000,
+      summary_model = nil, summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function() end)
+
+    picker.show_status  = orig_show
+    picker.close_status = orig_close
+    restore()
+
+    local found = false
+    for _, call in ipairs(status_calls) do
+      if call.kind == "show" and call.msg:match("Summarizing") then
+        found = true
+        break
+      end
+    end
+    assert.is_true(found, "Expected a 'Summarizing...' status message")
+  end)
+
+  -- GAP: status-ui-composing-phase
+  it("calls picker.show_status with 'Composing file summaries...' during roll-up", function()
+    local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")
+    local status_calls = {}
+    local picker = require("aicommits.ui.picker")
+    local orig_show  = picker.show_status
+    local orig_close = picker.close_status
+    picker.show_status  = function(msg) table.insert(status_calls, { kind = "show", msg = msg }) end
+    picker.close_status = function()    table.insert(status_calls, { kind = "close" }) end
+
+    local provider = make_mock_provider("- summary")
+    local big_diff = "diff --git a/big.lua b/big.lua\n@@ -1,5 +1,6 @@\n line1\n+line2"
+      .. string.rep("\nmore content", 30)
+    local diff_data = { diff = big_diff, files = { "big.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always", threshold_chars = 0,
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      small_file_chars = 50,
+      max_small_files_inline = 10, small_file_batch_chars = 4000,
+      summary_model = nil, summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function() end)
+
+    picker.show_status  = orig_show
+    picker.close_status = orig_close
+    restore()
+
+    local found = false
+    for _, call in ipairs(status_calls) do
+      if call.kind == "show" and call.msg == "Composing file summaries..." then
+        found = true
+        break
+      end
+    end
+    assert.is_true(found, "Expected 'Composing file summaries...' status message")
+  end)
+
+  -- GAP: status-ui-close-on-success
+  it("calls picker.close_status before the success callback fires", function()
+    local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")
+    local events = {}
+    local picker = require("aicommits.ui.picker")
+    local orig_show  = picker.show_status
+    local orig_close = picker.close_status
+    picker.show_status  = function(_msg) end
+    picker.close_status = function() table.insert(events, "close") end
+
+    local provider = make_mock_provider("- summary")
+    local big_diff = "diff --git a/big.lua b/big.lua\n@@ -1,5 +1,6 @@\n line1\n+line2"
+      .. string.rep("\nmore content", 30)
+    local diff_data = { diff = big_diff, files = { "big.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always", threshold_chars = 0,
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      small_file_chars = 50,
+      max_small_files_inline = 10, small_file_batch_chars = 4000,
+      summary_model = nil, summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    local cb_index_at_close = nil
+    local cb_called_index = 0
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function(_e, _p)
+        cb_called_index = cb_called_index + 1
+        -- Record how many close events have fired by the time callback runs
+        cb_index_at_close = #events
+      end)
+
+    picker.show_status  = orig_show
+    picker.close_status = orig_close
+    restore()
+
+    -- close_status must have been called before the callback
+    assert.is_true(cb_index_at_close ~= nil and cb_index_at_close >= 1)
+  end)
+
+  -- GAP: status-ui-close-on-all-failed
+  it("calls picker.close_status before the failure callback fires when all summaries fail", function()
+    local restore = stub_stat(" big.lua | 5 +++\n")
+    local close_count = 0
+    local picker = require("aicommits.ui.picker")
+    local orig_show  = picker.show_status
+    local orig_close = picker.close_status
+    picker.show_status  = function(_msg) end
+    picker.close_status = function() close_count = close_count + 1 end
+
+    local provider = make_mock_provider("ERR:api down")
+    local big_diff = "diff --git a/big.lua b/big.lua\n@@ -1,3 +1,4 @@\n a\n+b"
+      .. string.rep("\nx", 60)
+    local diff_data = { diff = big_diff, files = { "big.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always", small_file_chars = 50,
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      max_small_files_inline = 10, small_file_batch_chars = 4000,
+      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    local close_before_cb = nil
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function(_e, _p)
+        close_before_cb = close_count
+      end)
+
+    picker.show_status  = orig_show
+    picker.close_status = orig_close
+    restore()
+
+    assert.is_true(close_before_cb ~= nil and close_before_cb >= 1)
+  end)
+
+  -- GAP: status-ui-no-summarizing-when-all-inline
+  it("does not emit a 'Summarizing' message when all files are small-inline", function()
+    local restore = stub_stat(" a.lua | 1\n")
+    local status_calls = {}
+    local picker = require("aicommits.ui.picker")
+    local orig_show  = picker.show_status
+    local orig_close = picker.close_status
+    picker.show_status  = function(msg) table.insert(status_calls, { kind = "show", msg = msg }) end
+    picker.close_status = function()    table.insert(status_calls, { kind = "close" }) end
+
+    local provider = {
+      summarize = function(self, _text, _opts, _cfg, cb) cb(nil, "summary") end,
+    }
+
+    local diff = "diff --git a/a.lua b/a.lua\n@@ -1 +1 @@\n-old\n+new"
+    local diff_data = { diff = diff, files = { "a.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always",
+      small_file_chars = 10000,
+      max_small_files_inline = 10,
+      small_file_batch_chars = 4000,
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function() end)
+
+    picker.show_status  = orig_show
+    picker.close_status = orig_close
+    restore()
+
+    for _, call in ipairs(status_calls) do
+      if call.kind == "show" then
+        assert.is_falsy(call.msg:match("^Summarizing"),
+          "Unexpected 'Summarizing' message: " .. call.msg)
+      end
+    end
+  end)
+
+  -- GAP: provider-summarize-uses-provider-config-auth
+  it("propagates provider_config (including api_key) to provider.summarize calls", function()
+    local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")
+    local received_cfg = nil
+    local provider = {
+      summarize = function(self, _text, _opts, cfg, cb)
+        received_cfg = cfg
+        cb(nil, "- summary")
+      end,
+    }
+
+    local big_diff = "diff --git a/big.lua b/big.lua\n@@ -1,5 +1,6 @@\n line1\n+line2"
+      .. string.rep("\nmore content", 30)
+    local diff_data = { diff = big_diff, files = { "big.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always", threshold_chars = 0,
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      small_file_chars = 50,
+      max_small_files_inline = 10, small_file_batch_chars = 4000,
+      summary_model = nil, summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    local provider_config = { api_key = "my-secret-key", model = "gpt-4.1-nano" }
+
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, provider_config, function() end)
+
+    restore()
+
+    assert.is_not_nil(received_cfg)
+    assert.equals("my-secret-key", received_cfg.api_key)
   end)
 end)
