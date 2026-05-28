@@ -22,6 +22,11 @@ describe("vertex provider", function()
       assert.is_function(vertex.get_auth_headers)
       assert.is_function(vertex.get_capabilities)
     end)
+
+    -- GAP: provider-summarize-interface-exists (vertex)
+    it("exposes summarize as a function", function()
+      assert.is_function(vertex.summarize)
+    end)
   end)
 
   describe("validate_config", function()

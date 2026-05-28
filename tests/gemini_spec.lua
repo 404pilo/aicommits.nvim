@@ -21,6 +21,11 @@ describe("gemini-api provider", function()
       assert.is_function(gemini.get_auth_headers)
       assert.is_function(gemini.get_capabilities)
     end)
+
+    -- GAP: provider-summarize-interface-exists (gemini)
+    it("exposes summarize as a function", function()
+      assert.is_function(gemini.summarize)
+    end)
   end)
 
   describe("validate_config", function()

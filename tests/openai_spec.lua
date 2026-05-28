@@ -22,6 +22,11 @@ describe("openai provider", function()
       assert.is_function(openai.get_auth_headers)
       assert.is_function(openai.get_capabilities)
     end)
+
+    -- GAP: provider-summarize-interface-exists (openai)
+    it("exposes summarize as a function", function()
+      assert.is_function(openai.summarize)
+    end)
   end)
 
   describe("summarize()", function()
