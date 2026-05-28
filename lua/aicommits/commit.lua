@@ -45,12 +45,8 @@ function M.generate_and_commit()
     picker.show_status(string.format("Detected %d staged %s", file_count, file_word))
 
     -- Step 4: Generate commit message via provider
-    vim.defer_fn(function()
-      picker.show_status("The AI is analyzing your changes...")
-    end, 500)
-
     local config = require("aicommits.config")
-    local provider_config = config.get("providers." .. provider.name)
+    local provider_config = config.get("providers." .. provider.name) or {}
 
     -- Inject commitlint rules if husky is enabled and detected
     if config.get("husky.enabled") then
@@ -67,51 +63,55 @@ function M.generate_and_commit()
       end
     end
 
-    provider:generate_commit_message(diff_data.diff, provider_config, function(err, messages)
-      if err then
+    local input = require("aicommits.input")
+    input.prepare(diff_data, provider, provider_config, function(input_err, final_payload)
+      if input_err then
         picker.close_status()
-        utils.notify_error(err)
+        utils.notify_error(input_err)
         return
       end
 
-      if not messages or #messages == 0 then
-        picker.close_status()
-        utils.notify_error("No commit messages were generated. Try again.")
-        return
-      end
+      provider:generate_commit_message(final_payload, provider_config, function(err, messages)
+        if err then
+          picker.close_status()
+          utils.notify_error(err)
+          return
+        end
 
-      -- Step 5: Show user selection UI (status window auto-closes)
-      local ui_opts = { commitlint_detected = provider_config.commitlint_resolved == true }
-      ui.show_commit_prompt(
-        messages,
-        -- On confirm: create commit
-        function(selected_message)
-          picker.show_status("Creating commit...")
+        if not messages or #messages == 0 then
+          picker.close_status()
+          utils.notify_error("No commit messages were generated. Try again.")
+          return
+        end
 
-          git.create_commit(selected_message, function(err)
-            if err then
-              picker.close_status()
-              utils.notify_error(err)
-              return
-            end
+        -- Step 5: Show user selection UI (status window auto-closes)
+        local ui_opts = { commitlint_detected = provider_config.commitlint_resolved == true }
+        ui.show_commit_prompt(
+          messages,
+          function(selected_message)
+            picker.show_status("Creating commit...")
 
-            -- Step 6: Success - refresh git clients
-            picker.show_status("Successfully committed!")
-            git.refresh_git_clients()
+            git.create_commit(selected_message, function(err)
+              if err then
+                picker.close_status()
+                utils.notify_error(err)
+                return
+              end
 
-            -- Close status after brief display
-            vim.defer_fn(function()
-              picker.close_status()
-            end, 1500)
-          end)
-        end,
-        -- On cancel: abort (picker closes itself)
-        function()
-          -- Status already closed by picker, no action needed
-        end,
-        ui_opts
-      )
-    end)
+              picker.show_status("Successfully committed!")
+              git.refresh_git_clients()
+
+              vim.defer_fn(function()
+                picker.close_status()
+              end, 1500)
+            end)
+          end,
+          function()
+          end,
+          ui_opts
+        )
+      end)  -- generate_commit_message
+    end)    -- input.prepare
   end)
 end
 

@@ -262,3 +262,70 @@ describe("integration", function()
     end)
   end)
 end)
+
+describe("commit.lua — input.prepare integration", function()
+  it("calls generate_commit_message with final_payload from input.prepare", function()
+    local config = require("aicommits.config")
+    config.setup({ large_diff = { mode = "always" } })
+
+    -- Stub git operations
+    local git = require("aicommits.git")
+    local orig_is_repo    = git.is_git_repo
+    local orig_get_diff   = git.get_staged_diff
+    git.is_git_repo    = function() return true end
+    git.get_staged_diff = function(cb)
+      cb(nil, { diff = "raw-diff", files = { "a.lua" } })
+    end
+
+    -- Stub provider manager
+    local providers = require("aicommits.providers")
+    local orig_get_active = providers.get_active_provider
+    local received_payload
+    providers.get_active_provider = function()
+      return {
+        name = "test",
+        generate_commit_message = function(self, payload, _cfg, cb)
+          received_payload = payload
+          cb(nil, { "test: do stuff" })
+        end,
+      }, nil
+    end
+
+    -- Stub input.prepare to return a transformed payload
+    package.loaded["aicommits.input"] = nil
+    package.preload["aicommits.input"] = function()
+      return {
+        prepare = function(_dd, _p, _pc, cb)
+          cb(nil, "TRANSFORMED_PAYLOAD")
+        end,
+      }
+    end
+
+    -- Stub picker and ui to be no-ops
+    local picker = require("aicommits.ui.picker")
+    local orig_show = picker.show_status
+    local orig_close = picker.close_status
+    picker.show_status  = function() end
+    picker.close_status = function() end
+
+    local ui = require("aicommits.ui")
+    local orig_show_prompt = ui.show_commit_prompt
+    ui.show_commit_prompt = function() end
+
+    -- Run
+    package.loaded["aicommits.commit"] = nil
+    require("aicommits.commit").generate_and_commit()
+
+    -- Restore
+    git.is_git_repo        = orig_is_repo
+    git.get_staged_diff    = orig_get_diff
+    providers.get_active_provider = orig_get_active
+    package.preload["aicommits.input"] = nil
+    package.loaded["aicommits.input"]  = nil
+    picker.show_status   = orig_show
+    picker.close_status  = orig_close
+    ui.show_commit_prompt = orig_show_prompt
+
+    assert.equals("TRANSFORMED_PAYLOAD", received_payload)
+  end)
+end)
