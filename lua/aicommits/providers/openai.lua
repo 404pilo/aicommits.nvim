@@ -125,6 +125,60 @@ function M:generate_commit_message(diff, config, callback)
   end)
 end
 
+-- Summarize a piece of text using OpenAI API
+-- @param text           string  The content to summarize
+-- @param opts           table   { prompt_kind, file_path, model, max_tokens, temperature }
+-- @param provider_config table  Provider configuration
+-- @param callback       function(error, summary_text)
+function M:summarize(text, opts, provider_config, callback)
+  local api_key = get_api_key(provider_config)
+  if not api_key then
+    callback("OpenAI API key not found for summarize call", nil)
+    return
+  end
+
+  local model       = opts.model or provider_config.model or "gpt-4.1-nano"
+  local max_tokens  = opts.max_tokens or 220
+  local temperature = opts.temperature or 0.2
+  local endpoint    = provider_config.endpoint or "https://api.openai.com/v1/chat/completions"
+
+  local prompt = require("aicommits.prompts").build_summary_prompt(
+    opts.prompt_kind, text, { file_path = opts.file_path })
+
+  local request_body = {
+    model    = model,
+    messages = {
+      { role = "system", content = prompt.system },
+      { role = "user",   content = prompt.user },
+    },
+    max_tokens  = max_tokens,
+    temperature = temperature,
+    n           = 1,
+  }
+
+  http.post(endpoint, self:get_auth_headers(provider_config),
+    vim.json.encode(request_body), function(err, response_body)
+    if err then callback(err, nil); return end
+    local ok, response = pcall(vim.json.decode, response_body)
+    if not ok then
+      callback("Failed to parse OpenAI summarize response: " .. tostring(response), nil)
+      return
+    end
+    if response.error then
+      callback("OpenAI Error: " .. (response.error.message or vim.inspect(response.error)), nil)
+      return
+    end
+    local text_out = (
+      response.choices
+      and response.choices[1]
+      and response.choices[1].message
+      and response.choices[1].message.content
+    ) or ""
+    if text_out == "" then callback("OpenAI returned empty summary", nil); return end
+    callback(nil, text_out)
+  end)
+end
+
 -- Validate OpenAI provider configuration
 -- @param config table Provider configuration
 -- @return boolean valid True if configuration is valid

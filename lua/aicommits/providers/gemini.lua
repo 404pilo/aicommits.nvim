@@ -133,6 +133,67 @@ function M:generate_commit_message(diff, config, callback)
   end)
 end
 
+-- Summarize a piece of text using Gemini API
+-- @param text           string  The content to summarize
+-- @param opts           table   { prompt_kind, file_path, model, max_tokens, temperature }
+-- @param provider_config table  Provider configuration
+-- @param callback       function(error, summary_text)
+function M:summarize(text, opts, provider_config, callback)
+  local api_key = get_api_key(provider_config)
+  if not api_key then
+    callback("Gemini API key not found for summarize call", nil)
+    return
+  end
+
+  local model       = opts.model or provider_config.model or "gemini-2.5-flash"
+  local max_tokens  = opts.max_tokens or 220
+  local temperature = opts.temperature or 0.2
+
+  local prompt = require("aicommits.prompts").build_summary_prompt(
+    opts.prompt_kind, text, { file_path = opts.file_path })
+
+  local endpoint = string.format(
+    "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", model)
+
+  local request_body = {
+    contents = {
+      { role = "user", parts = { { text = prompt.system .. "\n\n" .. prompt.user } } },
+    },
+    generationConfig = {
+      temperature    = temperature,
+      maxOutputTokens = max_tokens,
+      candidateCount  = 1,
+    },
+  }
+
+  http.post(endpoint, self:get_auth_headers(provider_config),
+    vim.json.encode(request_body), function(err, response_body)
+    if err then callback(err, nil); return end
+    local ok, response = pcall(vim.json.decode, response_body)
+    if not ok then
+      callback("Failed to parse Gemini summarize response: " .. tostring(response), nil)
+      return
+    end
+    if response.error then
+      callback("Gemini API Error: " .. (response.error.message or vim.inspect(response.error)), nil)
+      return
+    end
+    local text_out = (
+      response.candidates
+      and response.candidates[1]
+      and response.candidates[1].content
+      and response.candidates[1].content.parts
+      and response.candidates[1].content.parts[1]
+      and response.candidates[1].content.parts[1].text
+    ) or ""
+    if text_out == "" then
+      callback("Gemini returned empty summary", nil)
+      return
+    end
+    callback(nil, text_out)
+  end)
+end
+
 -- Validate Gemini API provider configuration
 -- @param config table Provider configuration
 -- @return boolean valid True if configuration is valid
