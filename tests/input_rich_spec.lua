@@ -175,3 +175,150 @@ describe("make_scheduler()", function()
     assert.is_true(in_flight_peak <= 2)
   end)
 end)
+
+describe("prepare() integration", function()
+  local orig_picker_show, orig_picker_close, orig_vim_schedule
+
+  before_each(function()
+    rich = require("aicommits.input.rich")
+    -- rich.lua calls picker.show_status; stub it to prevent UI errors in tests. [inferred]
+    local picker = require("aicommits.ui.picker")
+    orig_picker_show  = picker.show_status
+    orig_picker_close = picker.close_status
+    picker.show_status  = function() end
+    picker.close_status = function() end
+    -- make_scheduler uses vim.schedule; stub it to run synchronously [inferred]
+    orig_vim_schedule = vim.schedule
+    vim.schedule = function(fn) fn() end
+  end)
+
+  after_each(function()
+    local picker = require("aicommits.ui.picker")
+    picker.show_status  = orig_picker_show
+    picker.close_status = orig_picker_close
+    vim.schedule = orig_vim_schedule
+  end)
+
+  local function make_mock_provider(summary_result)
+    -- summary_result: string (success) or error string prefixed with "ERR:"
+    return {
+      summarize = function(self, text, opts, provider_config, callback)
+        if summary_result:sub(1, 4) == "ERR:" then
+          callback(summary_result:sub(5), nil)
+        else
+          callback(nil, summary_result)
+        end
+      end,
+    }
+  end
+
+  local function stub_stat(stat_text)
+    local git = require("aicommits.git")
+    local orig = git.get_staged_stat
+    git.get_staged_stat = function(cb) cb(nil, stat_text) end
+    return function() git.get_staged_stat = orig end
+  end
+
+  it("returns assembled payload for a single large file", function()
+    local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")
+    local provider = make_mock_provider("- changed foo()")
+
+    local big_diff = table.concat({
+      "diff --git a/big.lua b/big.lua",
+      "@@ -1,5 +1,6 @@",
+      " line1",
+      "+line2",
+    }, "\n") .. string.rep("\nmore content", 30)  -- push over small_file_chars
+
+    local diff_data = { diff = big_diff, files = { "big.lua" } }
+    local cfg_override = {
+      mode = "always",
+      threshold_chars = 0,
+      chunk_chars = 6000,
+      max_chunks_per_file = 6,
+      small_file_chars = 50,  -- small threshold so big_diff is classified as large
+      max_small_files_inline = 10,
+      small_file_batch_chars = 4000,
+      summary_model = nil,
+      summary_max_tokens = 220,
+      summary_temperature = 0.2,
+      concurrency = 4,
+    }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = cfg_override })
+
+    local err, payload
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+
+    restore()
+
+    assert.is_nil(err)
+    assert.is_string(payload)
+    assert.is_truthy(payload:match("big%.lua"))
+    assert.is_truthy(payload:match("changed foo"))
+  end)
+
+  it("falls back to stat-only when all summaries fail", function()
+    local restore = stub_stat(" big.lua | 5 +++\n")
+    local provider = make_mock_provider("ERR:api down")
+
+    local big_diff = table.concat({
+      "diff --git a/big.lua b/big.lua",
+      "@@ -1,3 +1,4 @@",
+      " a",
+      "+b",
+    }, "\n") .. string.rep("\nx", 60)
+
+    local diff_data = { diff = big_diff, files = { "big.lua" } }
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always", small_file_chars = 50,
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      max_small_files_inline = 10, small_file_batch_chars = 4000,
+      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    local err, _payload
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function(e, p) err = e; _payload = p end)
+
+    restore()
+
+    -- All summaries failed → error surfaced
+    assert.is_string(err)
+  end)
+
+  it("small-batched path produces a payload containing batch summary", function()
+    local restore = stub_stat(" a.lua | 1\n b.lua | 1\n c.lua | 1\n")
+    local provider = make_mock_provider("- a: changed\n- b: changed\n- c: changed")
+
+    local mk = function(name)
+      return "diff --git a/" .. name .. " b/" .. name
+        .. "\n@@ -1 +1 @@\n-old\n+new"
+    end
+    local diff = mk("a.lua") .. "\n" .. mk("b.lua") .. "\n" .. mk("c.lua")
+    local diff_data = { diff = diff, files = { "a.lua", "b.lua", "c.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always",
+      small_file_chars = 10000,  -- all files are "small"
+      max_small_files_inline = 2,  -- 3 > 2 → small_batched
+      small_file_batch_chars = 4000,
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    local err, payload
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+
+    restore()
+
+    assert.is_nil(err)
+    assert.is_string(payload)
+    assert.is_truthy(payload:match("changed"))
+  end)
+end)

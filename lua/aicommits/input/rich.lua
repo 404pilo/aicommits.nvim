@@ -153,4 +153,305 @@ function M.make_scheduler(concurrency)
   }
 end
 
+-- Pack small files into batches respecting small_file_batch_chars budget.
+-- @param entries table  Array of file entries (small_batched bucket)
+-- @param batch_chars number
+-- @return table  Array of batch arrays
+local function pack_small_batches(entries, batch_chars)
+  local batches = {}
+  local current_batch = {}
+  local current_len = 0
+
+  for _, entry in ipairs(entries) do
+    local len = #entry.diff
+    if #current_batch > 0 and current_len + len > batch_chars then
+      table.insert(batches, current_batch)
+      current_batch = { entry }
+      current_len = len
+    else
+      table.insert(current_batch, entry)
+      current_len = current_len + len
+    end
+  end
+
+  if #current_batch > 0 then
+    table.insert(batches, current_batch)
+  end
+
+  return batches
+end
+
+-- Assemble the final prompt string from all pipeline results.
+-- @param stat_string   string
+-- @param large_results  table  Array of { path, summary or stat_line, is_stat }
+-- @param inline_entries table  Array of { path, diff }
+-- @param batch_results  table  Array of { paths, summary or nil, is_stat }
+-- @return string
+local function assemble_prompt(stat_string, large_results, inline_entries, batch_results)
+  local parts = {}
+
+  table.insert(parts, "## Staged Changes Overview\n\n" .. stat_string)
+
+  -- Large file sections
+  for _, r in ipairs(large_results) do
+    if r.is_stat then
+      table.insert(parts, string.format("### %s\n%s", r.path, r.stat_line))
+    else
+      table.insert(parts, string.format("### %s\n%s", r.path, r.summary))
+    end
+  end
+
+  -- Small-inline sections
+  for _, entry in ipairs(inline_entries) do
+    table.insert(parts, string.format("### %s\n```diff\n%s\n```", entry.path, entry.diff))
+  end
+
+  -- Batch summary sections
+  for i, br in ipairs(batch_results) do
+    local paths_str = table.concat(br.paths, ", ")
+    if br.is_stat then
+      table.insert(parts, string.format(
+        "### Batch %d (%s)\n(summary unavailable — stat only)", i, paths_str))
+    else
+      table.insert(parts, string.format(
+        "### Batch %d (%s)\n%s", i, paths_str, br.summary))
+    end
+  end
+
+  return table.concat(parts, "\n\n")
+end
+
+-- Prepare the final commit-message payload via the summarization pipeline.
+-- @param diff_data      table   { diff = string, files = table }
+-- @param provider       table   Provider instance (must implement :summarize())
+-- @param provider_config table  Passed as-is to provider:summarize()
+-- @param callback       function(error, final_payload)
+function M.prepare(diff_data, provider, provider_config, callback)
+  local config    = require("aicommits.config")
+  local git       = require("aicommits.git")
+  local picker    = require("aicommits.ui.picker")
+  local ld_cfg    = config.get("large_diff")
+
+  picker.show_status("Analyzing staged diff...")
+
+  -- 1. Fetch stat
+  git.get_staged_stat(function(stat_err, stat_string)
+    if stat_err then
+      picker.close_status()
+      callback("Failed to get staged stat: " .. stat_err, nil)
+      return
+    end
+
+    -- 2. Split and bucket
+    local file_entries = M.split_diff_by_file(diff_data.diff)
+    local buckets      = M.bucket_files(file_entries, ld_cfg)
+
+    local sched = M.make_scheduler(ld_cfg.concurrency)
+    -- A separate uncapped scheduler (concurrency = math.huge) is used for per-chunk calls
+    -- within a large-file task so that inner chunk tasks never block waiting for outer task
+    -- slots — which would deadlock when ld_cfg.concurrency is 1. [inferred]
+    local chunk_sched = M.make_scheduler(math.huge)
+
+    -- Track results
+    local large_results = {}    -- { path, summary?, stat_line?, is_stat }
+    local batch_results = {}    -- { paths, summary?, is_stat }
+
+    local summary_attempts  = 0
+    local summary_successes = 0
+
+    -- Pre-populate large_results order
+    for _, entry in ipairs(buckets.large) do
+      table.insert(large_results, { path = entry.path, is_stat = true,
+        stat_line = entry.path .. " (summary pending)" })
+    end
+
+    -- Pre-populate batch_results
+    local batches = pack_small_batches(buckets.small_batched, ld_cfg.small_file_batch_chars)
+    for _, batch in ipairs(batches) do
+      local paths = {}
+      for _, e in ipairs(batch) do table.insert(paths, e.path) end
+      table.insert(batch_results, { paths = paths, is_stat = true })
+    end
+
+    local total_tasks = 0
+    local done_tasks  = 0
+
+    local function check_done()
+      if done_tasks == total_tasks then
+        -- Partial-failure semantics: if ≥1 summary succeeded, assemble a mixed payload
+        -- where failed files appear as stat-only entries (already set on each failure path).
+        -- Only abort when zero summaries succeeded out of those attempted. [inferred]
+        if summary_attempts > 0 and summary_successes == 0 then
+          picker.close_status()  -- close status before surfacing the all-failed error
+          callback("All summary calls failed (0/" .. summary_attempts .. " succeeded); aborting rich input pipeline.", nil)
+          return
+        end
+
+        local payload = assemble_prompt(
+          stat_string, large_results, buckets.small_inline, batch_results)
+        picker.close_status()  -- close status before handing off to generate_commit_message
+        callback(nil, payload)
+      end
+    end
+
+    -- Count total async tasks: one per large file (chunks + rollup counted as one task group),
+    -- one per batch.
+    total_tasks = #buckets.large + #batches
+    if total_tasks == 0 then
+      -- Only small-inline files — assemble immediately
+      local payload = assemble_prompt(stat_string, {}, buckets.small_inline, {})
+      picker.close_status()  -- close status opened above before handing off
+      callback(nil, payload)
+      return
+    end
+
+    picker.show_status(string.format(
+      "Summarizing %d files in parallel...", #buckets.large + #batches))
+
+    -- ── Large file tasks ─────────────────────────────────────────────
+    for idx, entry in ipairs(buckets.large) do
+      local entry_idx = idx
+      local local_entry = entry
+
+      sched.run(function(task_done)
+        -- Guard against double-completion from nested chunk/rollup paths. [inferred]
+        local task_completed = false
+        local function complete_task()
+          if task_completed then return end
+          task_completed = true
+          done_tasks = done_tasks + 1
+          task_done()
+          check_done()
+        end
+
+        local chunks = M.split_into_chunks(local_entry.diff, ld_cfg.chunk_chars)
+
+        -- Overflow check: when a file exceeds max_chunks_per_file it is demoted to
+        -- stat-only and complete_task() is called immediately WITHOUT incrementing
+        -- summary_attempts, so overflow files never count toward the all-failed
+        -- threshold in check_done(). [inferred]
+        if #chunks > ld_cfg.max_chunks_per_file then
+          large_results[entry_idx] = {
+            path = local_entry.path, is_stat = true,
+            stat_line = local_entry.path
+              .. " (diff omitted: exceeded max_chunks_per_file)",
+          }
+          complete_task()
+          return
+        end
+
+        summary_attempts = summary_attempts + 1
+
+        -- Per-chunk summaries
+        local chunk_summaries = {}
+        local chunk_err_flag  = false
+        local chunks_done = 0
+
+        if #chunks == 0 then
+          -- No hunks — stat only
+          large_results[entry_idx] = {
+            path = local_entry.path, is_stat = true,
+            stat_line = local_entry.path .. " (no hunks)",
+          }
+          complete_task()
+          return
+        end
+
+        for c_idx, chunk in ipairs(chunks) do
+          local c_idx_local = c_idx
+          chunk_sched.run(function(chunk_done)  -- uses inner uncapped scheduler to avoid deadlock [inferred]
+            if chunk_err_flag then chunk_done(); return end
+            provider:summarize(chunk,
+              { prompt_kind = "chunk", file_path = local_entry.path,
+                model = ld_cfg.summary_model,
+                max_tokens = ld_cfg.summary_max_tokens,
+                temperature = ld_cfg.summary_temperature },
+              provider_config,
+              function(err, summary_text)
+                if err then
+                  chunk_err_flag = true
+                end
+                chunk_summaries[c_idx_local] = summary_text or ""
+                chunks_done = chunks_done + 1
+                chunk_done()
+
+                if chunks_done == #chunks then
+                  if chunk_err_flag then
+                    large_results[entry_idx] = {
+                      path = local_entry.path, is_stat = true,
+                      stat_line = local_entry.path .. " (summary failed)",
+                    }
+                    complete_task()
+                    return
+                  end
+
+                  -- Roll-up
+                  picker.show_status("Composing file summaries...")
+                  summary_attempts = summary_attempts + 1
+                  local combined = table.concat(chunk_summaries, "\n")
+                  provider:summarize(combined,
+                    { prompt_kind = "file_rollup", file_path = local_entry.path,
+                      model = ld_cfg.summary_model,
+                      max_tokens = ld_cfg.summary_max_tokens,
+                      temperature = ld_cfg.summary_temperature },
+                    provider_config,
+                    function(rollup_err, rollup_text)
+                      if rollup_err then
+                        large_results[entry_idx] = {
+                          path = local_entry.path, is_stat = true,
+                          stat_line = local_entry.path .. " (rollup failed)",
+                        }
+                      else
+                        summary_successes = summary_successes + 1
+                        large_results[entry_idx] = {
+                          path = local_entry.path, is_stat = false,
+                          summary = rollup_text,
+                        }
+                      end
+                      complete_task()
+                    end)
+                end
+              end)
+          end)
+        end
+      end)
+    end
+
+    -- ── Small-batch tasks ─────────────────────────────────────────────
+    for b_idx, batch in ipairs(batches) do
+      local b_idx_local = b_idx
+      local local_batch = batch
+
+      sched.run(function(task_done)
+        -- Build payload
+        local parts = {}
+        for _, e in ipairs(local_batch) do
+          table.insert(parts, e.path .. "\n" .. e.diff)
+        end
+        local batch_payload = table.concat(parts, "\n---\n")
+
+        summary_attempts = summary_attempts + 1
+        provider:summarize(batch_payload,
+          { prompt_kind = "small_batch",
+            model = ld_cfg.summary_model,
+            max_tokens = ld_cfg.summary_max_tokens,
+            temperature = ld_cfg.summary_temperature },
+          provider_config,
+          function(err, summary_text)
+            if err then
+              batch_results[b_idx_local].is_stat = true
+            else
+              summary_successes = summary_successes + 1
+              batch_results[b_idx_local].is_stat = false
+              batch_results[b_idx_local].summary = summary_text
+            end
+            done_tasks = done_tasks + 1
+            task_done()
+            check_done()
+          end)
+      end)
+    end
+  end)
+end
+
 return M
