@@ -1,0 +1,19 @@
+FINDINGS: critical=0 important=0 minor=2
+
+critical: []
+important: []
+
+minor:
+  - id: m1
+    section: Pipeline (Large-file path) / Final prompt assembly
+    pattern: Behavioral Ambiguity (cosmetic)
+    concern: "Stat-only note string '(diff omitted: exceeded max_chunks_per_file)' is hard-coded in pipeline prose rather than declared as a named constant in prompts.lua; minor ownership split."
+    recommendation: "Optional: declare prompts.STAT_ONLY_OVERFLOW_NOTE constant."
+
+  - id: m2
+    section: Refinement Status footer
+    pattern: Cosmetic
+    concern: "Footer says 'CONVERGED round 3' but this is the round-4 check."
+    recommendation: "Update footer to 'CONVERGED round 4'."
+
+LOOP_STATUS: CONVERGED

@@ -1,0 +1,35 @@
+FINDINGS: critical=0 important=3 minor=2
+
+critical: []
+
+important:
+  - id: i1
+    section: Architecture / Module layout / input/init.lua
+    pattern: Missing Decisions
+    concern: "Dispatch condition never specified. input/init.lua must compare something against threshold_chars in auto mode but the field/value is implicit. default.lua's signature relative to input.prepare is also unstated."
+    recommendation: "Add: 'In auto mode, compares #diff_data.diff against large_diff.threshold_chars; if below, delegates to default.lua; otherwise delegates to rich.lua. Both sub-modules expose prepare(diff_data, provider, provider_config, callback).'"
+
+  - id: i2
+    section: Pipeline (rich mode) / Bucketing
+    pattern: Undefined Error Paths / Unstated Assumptions
+    concern: "Binary files (`Binary files a/x and b/x differ`) and mode-only changes produce segments with no hunks. Chunking on @@ produces zero chunks; behavior is undefined."
+    recommendation: "Specify that files with zero hunks after parsing (binary or mode-only) are always treated as stat-only entries and bypass both bucketing paths."
+
+  - id: i3
+    section: Pipeline (rich mode) / Final prompt assembly
+    pattern: Missing Decisions
+    concern: "get_staged_stat's async pattern (sync-wrapped-in-callback vs true async) is unstated. Other git.lua functions vary; the concurrency scheduler section doesn't clarify how get_staged_stat composes with vim.schedule."
+    recommendation: "State: 'get_staged_stat follows the same sync-wrapped-in-callback pattern as get_staged_diff — calls vim.fn.system synchronously and invokes the callback in the same call frame (no vim.schedule wrapping).'"
+
+minor:
+  - id: m1
+    section: Pipeline (rich mode) / Large-file path
+    pattern: Behavioral Ambiguity
+    concern: "Overflow note string '(diff omitted: exceeded max_chunks_per_file)' lives in the final-prompt section but the condition lives in the large-file path. Risk of inconsistent wording across implementations."
+    recommendation: "Move the parenthetical note string to the Large-file path overflow check step, co-located with the condition that produces it."
+
+  - id: m2
+    section: Architecture / Module layout / prompts.lua (carry-over round 1)
+    pattern: Missing Decisions
+    concern: "Prompt content for chunk/file_rollup/small_batch remains undefined in the spec, deferred to prompts.lua."
+    recommendation: "Add a 'Prompt Templates' subsection specifying system/user message skeletons for each prompt_kind."

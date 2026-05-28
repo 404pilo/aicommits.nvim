@@ -1,0 +1,60 @@
+FINDINGS: critical=2 important=4 minor=2
+
+critical:
+  - id: c1
+    section: Architecture / Integration point
+    pattern: Conflict Detection
+    requirement: "commit.lua is unchanged except for one new step between fetching the diff and calling the provider's generate_commit_message"
+    concern: "commit.lua currently calls provider:generate_commit_message(diff_data.diff, ...) directly. The new step replaces that argument with final_payload from input.prepare. That is not a minor additive change — the call site must be restructured and the husky injection block must be moved/replicated before or inside the input.prepare callback. The spec's claim of 'unchanged except for one new step' is inconsistent with the actual required edit."
+    recommendation: "Explicitly describe what lines in commit.lua change: the existing provider:generate_commit_message call moves inside the input.prepare callback, receiving final_payload instead of diff_data.diff. Clarify that husky injection runs before input.prepare so provider_config is ready when summarize() is called."
+
+  - id: c2
+    section: Pipeline (rich mode) / Bucketing
+    pattern: Dependency Gap / Unstated Assumption
+    requirement: "For each file in diff_data.files, classify by per-file diff size"
+    concern: "git.get_staged_diff returns diff_data = {files: string[], diff: string} where files is an array of filename strings and diff is one concatenated string. There is no per-file diff content in diff_data. The pipeline requires measuring #file_diff and splitting hunks per file, which is impossible without per-file diff text. The spec never states how per-file diffs are obtained."
+    recommendation: "Specify that git.lua gains a new function (e.g. get_staged_diff_per_file) returning {files: {path, diff}[]}, or that input/rich.lua parses diff_data.diff by splitting on 'diff --git a/...' boundaries."
+
+important:
+  - id: i1
+    section: Pipeline (rich mode) / Final prompt assembly
+    pattern: Dependency Gap
+    requirement: "Overall stat block — output of git diff --cached --stat. Always included."
+    concern: "No function for git diff --cached --stat exists in git.lua. The spec says it is 'load-bearing' with an explicit failure mode but does not specify where the call is made, what async pattern, or sequencing relative to summarization."
+    recommendation: "Add a get_staged_stat() function to git.lua returning async callback(err, stat_string). State that input/rich.lua calls this at pipeline start before any summarization begins."
+
+  - id: i2
+    section: User-Facing Configuration
+    pattern: Dependency Gap
+    requirement: "All knobs live under a single large_diff block"
+    concern: "config.lua's M.defaults has no large_diff table. The spec does not state that config.lua must be updated, nor does it specify validation rules. Without defaults, config.get('large_diff') returns nil, breaking input/init.lua dispatch."
+    recommendation: "Explicitly state that config.lua M.defaults gains a large_diff block with the values shown. Optionally specify that M.validate() is extended to validate mode values."
+
+  - id: i3
+    section: Provider interface change
+    pattern: Behavioral Ambiguity
+    requirement: "opts = { model = string|nil, ... }"
+    concern: "Each provider currently selects its model from provider_config (passed to generate_commit_message). summarize() receives only opts — not the full provider_config. It is unspecified how providers access auth credentials (api_key, endpoint) inside summarize()."
+    recommendation: "Either pass provider_config as a parameter to summarize() alongside opts, or specify that summarize() reads provider config from config.get('providers.' .. self.name). The former is consistent with generate_commit_message's signature."
+
+  - id: i4
+    section: Pipeline (rich mode) / Concurrency
+    pattern: Missing Decisions
+    requirement: "Implementation: a queue + counter pattern compatible with neovim's async / vim.schedule model."
+    concern: "http.lua uses vim.system with callback wrapped in vim.schedule — callback-based, not coroutine-based. The spec gives no guidance on whether the scheduler uses vim.uv timers, coroutines, or a pure callback queue."
+    recommendation: "Specify that the concurrency scheduler is callback-based (not coroutine-based) to match existing http.lua pattern. Describe semaphore as a pending queue (table) plus an in_flight counter; when a slot frees, dispatch the next queued task via vim.schedule."
+
+minor:
+  - id: m1
+    section: Architecture / Module layout / prompts.lua
+    pattern: Missing Decisions
+    requirement: "The prompt body itself is built by prompts.lua based on prompt_kind so providers stay thin."
+    concern: "The spec defers prompt content entirely to prompts.lua with 'documented there,' but provides no specification of what the chunk, file_rollup, or small_batch prompts should instruct the model to do or what format they request."
+    recommendation: "Add a 'Prompt Templates' subsection specifying the system/user message content for each prompt_kind."
+
+  - id: m2
+    section: Error Handling
+    pattern: Behavioral Ambiguity
+    requirement: "All summary calls fail — Abort with error surfaced via utils.notify_error"
+    concern: "Edge case: when all files are small-inline there are zero summary calls, so the 'all fail' condition is vacuously true."
+    recommendation: "Clarify that the 'all summary calls fail' abort applies only when at least one summary call was attempted."
