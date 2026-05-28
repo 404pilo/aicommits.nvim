@@ -90,6 +90,21 @@ M.defaults = {
       },
     },
   },
+
+  -- Large Diff Summarization
+  large_diff = {
+    mode                 = "auto",
+    threshold_chars      = 12000,
+    chunk_chars          = 6000,
+    max_chunks_per_file  = 6,
+    small_file_chars     = 800,
+    max_small_files_inline = 10,
+    small_file_batch_chars = 4000,
+    summary_model        = nil,
+    summary_max_tokens   = 220,
+    summary_temperature  = 0.2,
+    concurrency          = 4,
+  },
 }
 
 -- Setup configuration by merging user options with defaults
@@ -144,6 +159,15 @@ function M.validate()
       table.insert(errors, string.format("No configuration found for provider '%s'", config.active_provider))
     elseif provider_config.enabled == false then
       table.insert(errors, string.format("Provider '%s' is disabled", config.active_provider))
+    end
+  end
+
+  if config.large_diff then
+    local valid_modes = { off = true, auto = true, always = true }
+    local mode = config.large_diff.mode
+    if mode and not valid_modes[mode] then
+      table.insert(errors, string.format(
+        "large_diff.mode must be 'off', 'auto', or 'always'; got '%s'", mode))
     end
   end
 
