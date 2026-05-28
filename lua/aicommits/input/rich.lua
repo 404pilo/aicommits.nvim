@@ -124,4 +124,33 @@ function M.bucket_files(file_entries, cfg)
   }
 end
 
+-- Create a concurrency-bounded scheduler.
+-- Tasks are functions with signature: fn(done) where done() signals completion.
+-- @param concurrency number  Maximum parallel tasks
+-- @return table { run = function(fn) }
+function M.make_scheduler(concurrency)
+  local in_flight = 0
+  local pending   = {}
+
+  local function try_dispatch()
+    while in_flight < concurrency and #pending > 0 do
+      local fn = table.remove(pending, 1)
+      in_flight = in_flight + 1
+      vim.schedule(function()
+        fn(function()
+          in_flight = in_flight - 1
+          try_dispatch()
+        end)
+      end)
+    end
+  end
+
+  return {
+    run = function(fn)
+      table.insert(pending, fn)
+      try_dispatch()
+    end,
+  }
+end
+
 return M

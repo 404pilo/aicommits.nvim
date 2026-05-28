@@ -123,3 +123,55 @@ describe("input.rich — parsing helpers", function()
     end)
   end)
 end)
+
+describe("make_scheduler()", function()
+  local orig_vim_schedule
+
+  before_each(function()
+    rich = require("aicommits.input.rich")
+    -- vim.schedule is not available in busted; stub it to fire synchronously. [inferred]
+    orig_vim_schedule = vim.schedule
+    vim.schedule = function(fn) fn() end
+  end)
+
+  after_each(function()
+    vim.schedule = orig_vim_schedule
+  end)
+
+  it("runs a single task and calls its done callback", function()
+    local sched = rich.make_scheduler(2)
+    local called = false
+    sched.run(function(done)
+      called = true
+      done()
+    end)
+    assert.is_true(called)
+  end)
+
+  it("respects concurrency cap — max in-flight equals concurrency", function()
+    local sched = rich.make_scheduler(2)
+    local in_flight_peak = 0
+    local in_flight = 0
+    local done_fns = {}
+
+    local function task(done)
+      in_flight = in_flight + 1
+      if in_flight > in_flight_peak then in_flight_peak = in_flight end
+      table.insert(done_fns, function()
+        in_flight = in_flight - 1
+        done()
+      end)
+    end
+
+    -- Enqueue 4 tasks; only 2 should start immediately
+    for _ = 1, 4 do sched.run(task) end
+
+    -- Complete all queued tasks
+    while #done_fns > 0 do
+      local fn = table.remove(done_fns, 1)
+      fn()
+    end
+
+    assert.is_true(in_flight_peak <= 2)
+  end)
+end)
