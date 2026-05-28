@@ -220,4 +220,20 @@ describe("validate() large_diff.mode", function()
     assert.is_true(#errors > 0)
     assert.is_truthy(errors[1]:match("large_diff.mode"))
   end)
+
+  -- GAP: config-validate-mode-auto
+  it("accepts mode = 'auto'", function()
+    config.setup({ large_diff = { mode = "auto" } })
+    local ok, errors = config.validate()
+    assert.is_true(ok)
+    assert.equals(0, #errors)
+  end)
+
+  -- GAP: config-validate-mode-always
+  it("accepts mode = 'always'", function()
+    config.setup({ large_diff = { mode = "always" } })
+    local ok, errors = config.validate()
+    assert.is_true(ok)
+    assert.equals(0, #errors)
+  end)
 end)
