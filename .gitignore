@@ -32,3 +32,9 @@ pre-cleanup-*.txt
 
 # Agent dispatch scratch (per-run prompts)
 .acpx-prompts/
+
+# Relay pipeline run artifacts (refinement sidecars, verification scenarios, completion record)
+.relay/
+
+# Superpowers implementation plans (working artifacts; specs under docs/superpowers/specs/ are kept)
+docs/superpowers/plans/
