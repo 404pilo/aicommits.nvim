@@ -182,12 +182,13 @@ local function pack_small_batches(entries, batch_chars)
 end
 
 -- Assemble the final prompt string from all pipeline results.
--- @param stat_string   string
--- @param large_results  table  Array of { path, summary or stat_line, is_stat }
--- @param inline_entries table  Array of { path, diff }
--- @param batch_results  table  Array of { paths, summary or nil, is_stat }
+-- @param stat_string      string
+-- @param large_results    table  Array of { path, summary or stat_line, is_stat }
+-- @param inline_entries   table  Array of { path, diff }
+-- @param batch_results    table  Array of { paths, summary or nil, is_stat }
+-- @param stat_only_entries table  Array of { path, diff, is_binary } (binary/empty-diff files)
 -- @return string
-local function assemble_prompt(stat_string, large_results, inline_entries, batch_results)
+local function assemble_prompt(stat_string, large_results, inline_entries, batch_results, stat_only_entries)
   local parts = {}
 
   table.insert(parts, "## Staged Changes Overview\n\n" .. stat_string)
@@ -216,6 +217,11 @@ local function assemble_prompt(stat_string, large_results, inline_entries, batch
       table.insert(parts, string.format(
         "### Batch %d (%s)\n%s", i, paths_str, br.summary))
     end
+  end
+
+  -- Stat-only sections (binary files, empty-diff / pure renames)
+  for _, entry in ipairs(stat_only_entries or {}) do
+    table.insert(parts, string.format("### %s\n(binary or empty diff — stat only)", entry.path))
   end
 
   return table.concat(parts, "\n\n")
@@ -288,7 +294,7 @@ function M.prepare(diff_data, provider, provider_config, callback)
         end
 
         local payload = assemble_prompt(
-          stat_string, large_results, buckets.small_inline, batch_results)
+          stat_string, large_results, buckets.small_inline, batch_results, buckets.stat_only)
         picker.close_status()  -- close status before handing off to generate_commit_message
         callback(nil, payload)
       end
@@ -299,7 +305,7 @@ function M.prepare(diff_data, provider, provider_config, callback)
     total_tasks = #buckets.large + #batches
     if total_tasks == 0 then
       -- Only small-inline files — assemble immediately
-      local payload = assemble_prompt(stat_string, {}, buckets.small_inline, {})
+      local payload = assemble_prompt(stat_string, {}, buckets.small_inline, {}, buckets.stat_only)
       picker.close_status()  -- close status opened above before handing off
       callback(nil, payload)
       return
@@ -340,8 +346,6 @@ function M.prepare(diff_data, provider, provider_config, callback)
           return
         end
 
-        summary_attempts = summary_attempts + 1
-
         -- Per-chunk summaries
         local chunk_summaries = {}
         local chunk_err_flag  = false
@@ -357,10 +361,23 @@ function M.prepare(diff_data, provider, provider_config, callback)
           return
         end
 
+        summary_attempts = summary_attempts + 1
+
         for c_idx, chunk in ipairs(chunks) do
           local c_idx_local = c_idx
           chunk_sched.run(function(chunk_done)  -- uses inner uncapped scheduler to avoid deadlock [inferred]
-            if chunk_err_flag then chunk_done(); return end
+            if chunk_err_flag then
+              chunks_done = chunks_done + 1
+              chunk_done()
+              if chunks_done == #chunks then
+                large_results[entry_idx] = {
+                  path = local_entry.path, is_stat = true,
+                  stat_line = local_entry.path .. " (summary failed)",
+                }
+                complete_task()
+              end
+              return
+            end
             provider:summarize(chunk,
               { prompt_kind = "chunk", file_path = local_entry.path,
                 model = ld_cfg.summary_model,

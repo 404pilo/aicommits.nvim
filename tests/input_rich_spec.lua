@@ -493,6 +493,57 @@ describe("prepare() integration", function()
     assert.is_true(err ~= nil or payload ~= nil)
   end)
 
+  -- GAP: multi-chunk-first-chunk-fails-complete-task-fires (covers F1 deadlock fix)
+  it("fires complete_task when first chunk fails in a multi-chunk file", function()
+    local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")
+    local call_num = 0
+    local provider = {
+      summarize = function(self, _text, _opts, _cfg, cb)
+        call_num = call_num + 1
+        if call_num == 1 then
+          cb("chunk error", nil)
+        else
+          cb(nil, "- summary " .. call_num)
+        end
+      end,
+    }
+
+    -- Build a diff with 3 hunks that will each become their own chunk (chunk_chars=50)
+    local big_diff = table.concat({
+      "diff --git a/big.lua b/big.lua",
+      "@@ -1,2 +1,3 @@",
+      " line1",
+      "+line2",
+      "@@ -10,2 +11,3 @@",
+      " line10",
+      "+line11",
+      "@@ -20,2 +21,3 @@",
+      " line20",
+      "+line21",
+    }, "\n")
+
+    local diff_data = { diff = big_diff, files = { "big.lua" } }
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always", small_file_chars = 1,
+      chunk_chars = 50, max_chunks_per_file = 10,
+      max_small_files_inline = 10, small_file_batch_chars = 4000,
+      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    local cb_fired = false
+    local err, payload
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function(e, p) cb_fired = true; err = e; payload = p end)
+
+    restore()
+
+    -- complete_task must have fired — callback must have been called (no deadlock)
+    assert.is_true(cb_fired, "callback never fired — likely F1 deadlock")
+    -- The file failed all chunks → all-failed error or stat-only payload
+    assert.is_true(err ~= nil or payload ~= nil)
+  end)
+
   -- GAP: file-rollup-error-stat-only-per-file
   it("degrades file to stat-only when roll-up call fails but other files succeed", function()
     local restore = stub_stat(" good.lua | 5\n bad.lua | 5\n")
