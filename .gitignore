@@ -29,3 +29,6 @@ memory-bank/
 .mailmap
 pre-cleanup-*.txt
 .claude
+
+# Agent dispatch scratch (per-run prompts)
+.acpx-prompts/

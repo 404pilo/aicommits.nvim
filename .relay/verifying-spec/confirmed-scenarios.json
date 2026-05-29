@@ -1,0 +1,320 @@
+{
+  "results": [
+    {
+      "id": "config-large-diff-defaults",
+      "status": "PASS",
+      "evidence": "tests/config_spec.lua: describe 'large_diff defaults' > it 'provides default large_diff block'"
+    },
+    {
+      "id": "config-large-diff-deep-merge",
+      "status": "PASS",
+      "evidence": "tests/config_spec.lua: describe 'large_diff defaults' > it 'allows user to override individual large_diff fields'"
+    },
+    {
+      "id": "config-validate-mode-off",
+      "status": "PASS",
+      "evidence": "tests/config_spec.lua: describe 'validate() large_diff.mode' > it 'accepts mode = off'"
+    },
+    {
+      "id": "config-validate-mode-auto",
+      "status": "GAP",
+      "evidence": "tests/config_spec.lua: 'accepts mode = off' covers off only; default config covers auto implicitly via 'returns true for valid default configuration'",
+      "gap_assertion": "Assert config.validate() returns true with zero errors after setup({ large_diff = { mode = 'auto' } })."
+    },
+    {
+      "id": "config-validate-mode-always",
+      "status": "GAP",
+      "evidence": "tests/config_spec.lua: no explicit test for mode='always' acceptance",
+      "gap_assertion": "Assert config.validate() returns true with zero errors after setup({ large_diff = { mode = 'always' } })."
+    },
+    {
+      "id": "config-validate-mode-invalid",
+      "status": "PASS",
+      "evidence": "tests/config_spec.lua: describe 'validate() large_diff.mode' > it 'rejects unknown mode'"
+    },
+    {
+      "id": "routing-mode-off-always-default",
+      "status": "PASS",
+      "evidence": "tests/input_init_spec.lua: it 'routes to default when mode is off'"
+    },
+    {
+      "id": "routing-mode-auto-below-threshold",
+      "status": "PASS",
+      "evidence": "tests/input_init_spec.lua: it 'routes to default when mode is auto and diff is below threshold'"
+    },
+    {
+      "id": "routing-mode-auto-above-threshold",
+      "status": "PASS",
+      "evidence": "tests/input_init_spec.lua: it 'routes to rich when mode is auto and diff exceeds threshold'"
+    },
+    {
+      "id": "routing-mode-always-bypasses-threshold",
+      "status": "PASS",
+      "evidence": "tests/input_init_spec.lua: it 'routes to rich when mode is always'"
+    },
+    {
+      "id": "split-diff-empty-string",
+      "status": "PASS",
+      "evidence": "tests/input_rich_spec.lua: describe 'split_diff_by_file()' > it 'returns empty table for empty diff'"
+    },
+    {
+      "id": "split-diff-two-files",
+      "status": "PASS",
+      "evidence": "tests/input_rich_spec.lua: describe 'split_diff_by_file()' > it 'splits a two-file diff into two entries'"
+    },
+    {
+      "id": "split-diff-binary-file-flagged",
+      "status": "PASS",
+      "evidence": "tests/input_rich_spec.lua: describe 'split_diff_by_file()' > it 'marks binary files with zero-hunk flag'"
+    },
+    {
+      "id": "chunking-small-hunks-packed",
+      "status": "PASS",
+      "evidence": "tests/input_rich_spec.lua: describe 'split_into_chunks()' > it 'packs multiple small hunks into one chunk when they fit'"
+    },
+    {
+      "id": "chunking-large-file-split-on-hunk-boundary",
+      "status": "PASS",
+      "evidence": "tests/input_rich_spec.lua: describe 'split_into_chunks()' > it 'splits into two chunks when combined size exceeds chunk_chars'"
+    },
+    {
+      "id": "chunking-oversized-single-hunk",
+      "status": "PASS",
+      "evidence": "tests/input_rich_spec.lua: describe 'split_into_chunks()' > it 'puts an oversized single hunk into its own chunk'"
+    },
+    {
+      "id": "bucketing-large-file",
+      "status": "PASS",
+      "evidence": "tests/input_rich_spec.lua: describe 'bucket_files()' > it 'classifies a large file as large'"
+    },
+    {
+      "id": "bucketing-small-inline-under-limit",
+      "status": "PASS",
+      "evidence": "tests/input_rich_spec.lua: describe 'bucket_files()' > it 'classifies small files as small_inline when count <= max_small_files_inline'"
+    },
+    {
+      "id": "bucketing-small-batched-over-limit",
+      "status": "PASS",
+      "evidence": "tests/input_rich_spec.lua: describe 'bucket_files()' > it 'classifies small files as small_batched when count > max_small_files_inline'"
+    },
+    {
+      "id": "bucketing-binary-file-stat-only",
+      "status": "PASS",
+      "evidence": "tests/input_rich_spec.lua: describe 'bucket_files()' > it 'puts binary files into stat_only bucket'"
+    },
+    {
+      "id": "bucketing-mode-only-change-stat-only",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: no test for zero-hunk (mode-only change) file classification",
+      "gap_assertion": "Assert that a file diff with zero '@@' hunks is placed in buckets.stat_only and bypasses summarization."
+    },
+    {
+      "id": "overflow-max-chunks-exceeded-stat-only",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: no test exercising max_chunks_per_file overflow",
+      "gap_assertion": "Assert that when a file produces more chunks than max_chunks_per_file, no summary calls are made and payload includes a stat-only entry with '(diff omitted: exceeded max_chunks_per_file)'."
+    },
+    {
+      "id": "large-file-full-pipeline",
+      "status": "PASS",
+      "evidence": "tests/input_rich_spec.lua: describe 'prepare() integration' > it 'returns assembled payload for a single large file'"
+    },
+    {
+      "id": "small-batched-path-produces-summary",
+      "status": "PASS",
+      "evidence": "tests/input_rich_spec.lua: describe 'prepare() integration' > it 'small-batched path produces a payload containing batch summary'"
+    },
+    {
+      "id": "small-batch-packing-boundary",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: small-batched test uses a single batch; no boundary test for packing into multiple batches",
+      "gap_assertion": "Assert that when 3 small files exceed small_file_batch_chars, two batches are created and provider.summarize is called twice."
+    },
+    {
+      "id": "single-chunk-summary-error-stat-only-per-file",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: only 'all summaries fail' is tested; no per-file partial chunk error degradation",
+      "gap_assertion": "Assert that when one chunk summary call fails, remaining chunks for that file are cancelled and the file falls back to a stat-only entry with err=nil."
+    },
+    {
+      "id": "file-rollup-error-stat-only-per-file",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: no test for file roll-up failure path",
+      "gap_assertion": "Assert that when chunk summaries succeed but the file roll-up call errors, the file becomes stat-only and callback err is nil."
+    },
+    {
+      "id": "small-batch-error-stat-only-per-file",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: small-batched success is tested but not the batch failure fallback",
+      "gap_assertion": "Assert that when a small-batch summary call errors, all files in that batch become stat-only entries and callback err is nil."
+    },
+    {
+      "id": "partial-failure-mixed-payload",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: no test with mixed success/failure across multiple large files",
+      "gap_assertion": "Assert that with 3 large files where one fails, the payload contains roll-up summaries for two files plus a stat-only entry for the failed file."
+    },
+    {
+      "id": "all-summaries-fail-abort",
+      "status": "PASS",
+      "evidence": "tests/input_rich_spec.lua: describe 'prepare() integration' > it 'falls back to stat-only when all summaries fail'"
+    },
+    {
+      "id": "all-small-inline-no-summary-calls-no-abort",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: no explicit test of all-small-inline zero-summary-calls path",
+      "gap_assertion": "Assert that when all files are small-inline, provider.summarize is never called and callback fires with err=nil and a payload containing raw diffs."
+    },
+    {
+      "id": "scheduler-single-task",
+      "status": "PASS",
+      "evidence": "tests/input_rich_spec.lua: describe 'make_scheduler()' > it 'runs a single task and calls its done callback'"
+    },
+    {
+      "id": "scheduler-concurrency-cap",
+      "status": "PASS",
+      "evidence": "tests/input_rich_spec.lua: describe 'make_scheduler()' > it 'respects concurrency cap — max in-flight equals concurrency'"
+    },
+    {
+      "id": "scheduler-queued-tasks-drain-after-completion",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: concurrency-cap test enqueues 4 tasks but does not explicitly assert all queued tasks reach completion (1-slot drain scenario)",
+      "gap_assertion": "Assert that with make_scheduler(1) and 3 enqueued tasks, all 3 tasks execute to completion sequentially."
+    },
+    {
+      "id": "git-get-staged-stat-success",
+      "status": "PASS",
+      "evidence": "tests/git_spec.lua: describe 'get_staged_stat()' > it 'calls callback with a string when there are staged changes'"
+    },
+    {
+      "id": "git-get-staged-stat-failure",
+      "status": "PASS",
+      "evidence": "tests/git_spec.lua: describe 'get_staged_stat()' > it 'calls callback with error when git fails'"
+    },
+    {
+      "id": "git-get-staged-stat-synchronous-callback",
+      "status": "GAP",
+      "evidence": "tests/git_spec.lua: existing tests implicitly rely on synchronous behavior but do not assert same-call-frame invocation",
+      "gap_assertion": "Assert that git.get_staged_stat's callback is invoked synchronously in the same call frame (e.g., by setting a flag after the call and verifying it was already set before assertion)."
+    },
+    {
+      "id": "stat-fetch-failure-aborts-pipeline",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: no test where git.get_staged_stat fails before pipeline runs",
+      "gap_assertion": "Assert that when git.get_staged_stat returns an error, rich.prepare callback fires with a non-nil error and provider.summarize is never called."
+    },
+    {
+      "id": "final-payload-contains-stat-block",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: large-file integration test does not assert the stat block text is included in the payload",
+      "gap_assertion": "Assert that rich.prepare's payload string contains the stat block text ('file changed' or the stat line) returned by git.get_staged_stat."
+    },
+    {
+      "id": "final-payload-large-file-section-header",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: large-file test asserts payload contains file name but not the '### big.lua' section header pattern",
+      "gap_assertion": "Assert that the payload contains '### big.lua' as a section header followed by the roll-up summary text."
+    },
+    {
+      "id": "final-payload-small-inline-section",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: no test for small-inline file section header containing raw diff verbatim",
+      "gap_assertion": "Assert that the payload contains '### small.lua' followed by the raw diff content verbatim."
+    },
+    {
+      "id": "final-payload-stat-only-section",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: no test asserting the stat-only section format including the '(diff omitted: exceeded max_chunks_per_file)' note",
+      "gap_assertion": "Assert that a file demoted to stat-only due to max_chunks_per_file overflow appears in the payload as '### <path>' with its stat line and '(diff omitted: exceeded max_chunks_per_file)'."
+    },
+    {
+      "id": "prompts-build-summary-chunk-kind",
+      "status": "PASS",
+      "evidence": "tests/prompts_spec.lua: describe 'build_summary_prompt()' > it 'returns system and user strings for chunk kind'"
+    },
+    {
+      "id": "prompts-build-summary-file-rollup-kind",
+      "status": "PASS",
+      "evidence": "tests/prompts_spec.lua: describe 'build_summary_prompt()' > it 'returns system and user strings for file_rollup kind'"
+    },
+    {
+      "id": "prompts-build-summary-small-batch-kind",
+      "status": "PASS",
+      "evidence": "tests/prompts_spec.lua: describe 'build_summary_prompt()' > it 'returns system and user strings for small_batch kind'"
+    },
+    {
+      "id": "prompts-build-summary-unknown-kind-errors",
+      "status": "PASS",
+      "evidence": "tests/prompts_spec.lua: describe 'build_summary_prompt()' > it 'errors on unknown kind'"
+    },
+    {
+      "id": "commit-lua-passes-final-payload-to-generate",
+      "status": "PASS",
+      "evidence": "tests/integration_spec.lua: describe 'commit.lua — input.prepare integration' > it 'calls generate_commit_message with final_payload from input.prepare'"
+    },
+    {
+      "id": "commit-lua-husky-injection-before-input-prepare",
+      "status": "GAP",
+      "evidence": "tests/integration_spec.lua: no test verifying husky/commitlint injection ordering relative to input.prepare vs summary calls",
+      "gap_assertion": "Assert that the provider_config passed to input.prepare already contains the commitlint injection, while summary calls inside rich.lua do not receive commitlint rules."
+    },
+    {
+      "id": "status-ui-analyzing-phase",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: picker.show_status is stubbed to a no-op without recording calls",
+      "gap_assertion": "Assert that picker.show_status is called with the string 'Analyzing staged diff...' during the bucketing phase."
+    },
+    {
+      "id": "status-ui-summarizing-phase",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: no assertion on the 'Summarizing' status message content or count",
+      "gap_assertion": "Assert that picker.show_status is called with a string containing 'Summarizing' and the total task count (large files + batch groups)."
+    },
+    {
+      "id": "status-ui-composing-phase",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: no assertion that 'Composing file summaries...' status is emitted",
+      "gap_assertion": "Assert that picker.show_status is called with 'Composing file summaries...' when the roll-up phase begins."
+    },
+    {
+      "id": "status-ui-close-on-success",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: picker.close_status is stubbed without recording call ordering",
+      "gap_assertion": "Assert that picker.close_status is invoked before rich.prepare's success callback fires."
+    },
+    {
+      "id": "status-ui-close-on-all-failed",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: all-summaries-fail test does not assert picker.close_status was called",
+      "gap_assertion": "Assert that picker.close_status is invoked before rich.prepare's failure callback fires when all summaries fail."
+    },
+    {
+      "id": "status-ui-no-summarizing-when-all-inline",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: no test asserting absence of 'Summarizing' status when zero summary tasks exist",
+      "gap_assertion": "Assert that picker.show_status is NOT called with any string beginning with 'Summarizing' when all files are small-inline."
+    },
+    {
+      "id": "provider-summarize-interface-exists",
+      "status": "GAP",
+      "evidence": "tests/openai_spec.lua: 'implements required methods' covers generate_commit_message and others but not summarize as a function",
+      "gap_assertion": "Assert that provider.summarize is a function on each concrete provider module (openai, gemini, vertex)."
+    },
+    {
+      "id": "provider-summarize-uses-provider-config-auth",
+      "status": "GAP",
+      "evidence": "tests/input_rich_spec.lua: mock provider.summarize ignores provider_config; no test asserts api_key is forwarded from rich pipeline",
+      "gap_assertion": "Assert that the provider_config table passed to rich.prepare is propagated to provider.summarize calls so api_key is accessible inside summarize."
+    },
+    {
+      "id": "input-default-returns-raw-diff",
+      "status": "PASS",
+      "evidence": "tests/input_default_spec.lua: it 'calls callback with raw diff string'"
+    }
+  ],
+  "summary": {
+    "total": 57,
+    "pass": 30,
+    "gap": 27
+  }
+}
