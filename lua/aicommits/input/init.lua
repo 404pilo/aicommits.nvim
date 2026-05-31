@@ -1,6 +1,13 @@
 -- Input dispatcher: routes diff preparation to default or rich pipeline.
 local M = {}
 
+local function supports_summarize(provider)
+  local base = require("aicommits.providers.base")
+  return type(provider) == "table"
+    and type(provider.summarize) == "function"
+    and provider.summarize ~= base.Provider.summarize
+end
+
 -- Prepare the final commit-message payload.
 -- Reads large_diff config to decide which pipeline to use.
 -- @param diff_data      table   { diff = string, files = table }
@@ -19,6 +26,15 @@ function M.prepare(diff_data, provider, provider_config, callback)
   elseif mode == "auto" then
     local threshold = ld.threshold_chars or 12000
     use_rich = #(diff_data.diff or "") > threshold
+  end
+
+  if use_rich and not supports_summarize(provider) then
+    use_rich = false
+    vim.notify(
+      "aicommits: active provider does not support diff summarization; "
+        .. "using standard input for this commit.",
+      vim.log.levels.WARN
+    )
   end
 
   if use_rich then
