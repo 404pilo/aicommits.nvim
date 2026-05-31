@@ -35,6 +35,23 @@ describe("input.rich — parsing helpers", function()
       assert.is_truthy(result[2].diff:match("removed"))
     end)
 
+    it("parses quoted diff headers and keeps the file entry", function()
+      local diff = table.concat({
+        [[diff --git "a/a\tb.txt" "b/a\tb.txt"]],
+        "--- a/a\tb.txt",
+        "+++ b/a\tb.txt",
+        "@@ -1 +1 @@",
+        "-old",
+        "+new",
+      }, "\n")
+
+      local result = rich.split_diff_by_file(diff)
+      assert.equals(1, #result)
+      assert.is_not_nil(result[1].path)
+      assert.is_truthy(result[1].path:match("\t"))
+      assert.is_truthy(result[1].diff:match("%+new"))
+    end)
+
     it("marks binary files with zero-hunk flag", function()
       local diff = table.concat({
         "diff --git a/img.png b/img.png",
@@ -289,6 +306,18 @@ describe("make_scheduler()", function()
     -- All three task indices were executed
     assert.same({1, 2, 3}, completed)
   end)
+
+  it("clamps concurrency <= 0 and still runs queued tasks", function()
+    local sched = rich.make_scheduler(0)
+    local called = false
+
+    sched.run(function(done)
+      called = true
+      done()
+    end)
+
+    assert.is_true(called)
+  end)
 end)
 
 describe("prepare() integration", function()
@@ -527,6 +556,44 @@ describe("prepare() integration", function()
 
     assert.is_nil(err)
     assert.is_true(batch_count >= 2, "expected at least 2 batches, got " .. batch_count)
+  end)
+
+  it("counts path and separator framing in small-file batch budget", function()
+    local restore = stub_stat(" abcdefghij.lua | 1\n klmnopqrst.lua | 1\n")
+    local batch_count = 0
+    local provider = {
+      summarize = function(self, _text, _opts, _cfg, cb)
+        batch_count = batch_count + 1
+        cb(nil, "- batch summary " .. batch_count)
+      end,
+    }
+
+    local mk = function(name)
+      return "diff --git a/" .. name .. " b/" .. name .. "\n@@ -1 +1 @@\n-a\n+b"
+    end
+    local diff = mk("abcdefghij.lua") .. "\n" .. mk("klmnopqrst.lua")
+    local diff_data = { diff = diff, files = { "abcdefghij.lua", "klmnopqrst.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = {
+      mode = "always",
+      small_file_chars = 10000,
+      max_small_files_inline = 0,
+      -- Raw diff payload fits, but framed payload with "path\\n" + "\\n---\\n" must split.
+      small_file_batch_chars = 55,
+      chunk_chars = 6000, max_chunks_per_file = 6,
+      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
+    }})
+
+    local err, payload
+    require("aicommits.input.rich").prepare(
+      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+
+    restore()
+
+    assert.is_nil(err)
+    assert.is_string(payload)
+    assert.equals(2, batch_count)
   end)
 
   -- GAP: single-chunk-summary-error-stat-only-per-file

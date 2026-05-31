@@ -169,6 +169,11 @@ function M.validate()
       table.insert(errors, string.format(
         "large_diff.mode must be 'off', 'auto', or 'always'; got '%s'", mode))
     end
+    local concurrency = config.large_diff.concurrency
+    if concurrency ~= nil and (type(concurrency) ~= "number" or concurrency < 1 or concurrency % 1 ~= 0) then
+      table.insert(errors, string.format(
+        "large_diff.concurrency must be a positive integer; got '%s'", tostring(concurrency)))
+    end
   end
 
   return #errors == 0, errors

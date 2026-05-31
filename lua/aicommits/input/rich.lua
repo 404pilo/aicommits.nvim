@@ -29,6 +29,17 @@ function M.split_diff_by_file(diff)
 
   for line in (diff .. "\n"):gmatch("([^\n]*)\n") do
     local path = line:match("^diff %-%-git a/.+ b/(.+)$")
+    if not path then
+      local quoted = line:match('^diff %-%-git "a/.*" "b/(.+)"$')
+      if quoted then
+        quoted = quoted:gsub("\\(.)", function(c)
+          if c == "t" then return "\t" end
+          if c == "n" then return "\n" end
+          return c
+        end)
+        path = quoted
+      end
+    end
     if path then
       flush()
       current_path = path
@@ -136,6 +147,7 @@ end
 -- @param concurrency number  Maximum parallel tasks
 -- @return table { run = function(fn) }
 function M.make_scheduler(concurrency)
+  concurrency = math.max(1, math.floor(tonumber(concurrency) or 1))
   local in_flight = 0
   local pending   = {}
 
@@ -165,19 +177,21 @@ end
 -- @param batch_chars number
 -- @return table  Array of batch arrays
 local function pack_small_batches(entries, batch_chars)
+  local SEP = "\n---\n"
   local batches = {}
   local current_batch = {}
   local current_len = 0
 
   for _, entry in ipairs(entries) do
-    local len = #entry.diff
-    if #current_batch > 0 and current_len + len > batch_chars then
+    local entry_len = #entry.path + 1 + #entry.diff
+    local added = entry_len + ((#current_batch > 0) and #SEP or 0)
+    if #current_batch > 0 and current_len + added > batch_chars then
       table.insert(batches, current_batch)
       current_batch = { entry }
-      current_len = len
+      current_len = entry_len
     else
       table.insert(current_batch, entry)
-      current_len = current_len + len
+      current_len = current_len + added
     end
   end
 
