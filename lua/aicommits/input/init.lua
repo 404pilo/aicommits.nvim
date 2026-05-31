@@ -25,7 +25,7 @@ function M.prepare(diff_data, provider, provider_config, callback)
   if mode == MODES.ALWAYS then
     use_rich = true
   elseif mode == MODES.AUTO then
-    local threshold = ld.threshold_chars or 12000
+    local threshold = ld.threshold_chars or 60000
     use_rich = #(diff_data.diff or "") > threshold
   end
 

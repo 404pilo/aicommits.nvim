@@ -101,7 +101,7 @@ M.defaults = {
   -- Large Diff Summarization
   large_diff = {
     mode = "auto",
-    threshold_chars = 12000,
+    threshold_chars = 60000,
     chunk_chars = 6000,
     max_chunks_per_file = 6,
     small_file_chars = 800,
