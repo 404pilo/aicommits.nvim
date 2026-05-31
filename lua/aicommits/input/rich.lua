@@ -2,9 +2,9 @@
 local M = {}
 
 -- Split a full git diff into per-file entries.
--- Each entry: { path = string, diff = string, is_binary = boolean }
+-- Each entry: { path = string, diff = string, is_binary = boolean, is_empty = boolean }
 -- @param diff string  Full output of git diff --cached
--- @return table  Array of { path, diff, is_binary }
+-- @return table  Array of { path, diff, is_binary, is_empty }
 function M.split_diff_by_file(diff)
   if not diff or diff == "" then return {} end
 
@@ -16,7 +16,14 @@ function M.split_diff_by_file(diff)
     if current_path then
       local file_diff = table.concat(current_lines, "\n")
       local is_binary = file_diff:match("Binary files") ~= nil  -- no ^ anchor: first line is 'diff --git' header
-      table.insert(entries, { path = current_path, diff = file_diff, is_binary = is_binary })
+      -- No @@ hunk means there is no content to summarize (pure rename, mode-only
+      -- change, or empty file add); flag it so bucket_files routes it to stat_only.
+      -- The diff always starts with the 'diff --git' header, so a hunk header is
+      -- always preceded by a newline. [FINDING-002]
+      local is_empty = (not is_binary) and (file_diff:match("\n@@") == nil)
+      table.insert(entries, {
+        path = current_path, diff = file_diff, is_binary = is_binary, is_empty = is_empty,
+      })
     end
   end
 
@@ -89,7 +96,7 @@ end
 
 -- Classify per-file diff entries into buckets.
 -- Returns { large = [], small_inline = [], small_batched = [], stat_only = [] }
--- @param file_entries table  Array of { path, diff, is_binary } from split_diff_by_file
+-- @param file_entries table  Array of { path, diff, is_binary, is_empty } from split_diff_by_file
 -- @param cfg          table  large_diff config subset: { small_file_chars, max_small_files_inline }
 -- @return table  Bucket table
 function M.bucket_files(file_entries, cfg)
@@ -98,7 +105,7 @@ function M.bucket_files(file_entries, cfg)
   local stat_only    = {}
 
   for _, entry in ipairs(file_entries) do
-    if entry.is_binary or entry.diff == "" then
+    if entry.is_binary or entry.diff == "" or entry.is_empty then
       table.insert(stat_only, entry)
     elseif #entry.diff > cfg.small_file_chars then
       table.insert(large, entry)
@@ -186,7 +193,7 @@ end
 -- @param large_results    table  Array of { path, summary or stat_line, is_stat }
 -- @param inline_entries   table  Array of { path, diff }
 -- @param batch_results    table  Array of { paths, summary or nil, is_stat }
--- @param stat_only_entries table  Array of { path, diff, is_binary } (binary/empty-diff files)
+-- @param stat_only_entries table  Array of { path, diff, is_binary } (binary files, pure renames, mode-only / empty diffs)
 -- @return string
 local function assemble_prompt(stat_string, large_results, inline_entries, batch_results, stat_only_entries)
   local parts = {}

@@ -44,6 +44,51 @@ describe("input.rich — parsing helpers", function()
       assert.equals(1, #result)
       assert.is_true(result[1].is_binary)
     end)
+
+    -- FINDING-002: real-path regression — pure rename has no @@ hunk
+    it("flags a pure rename as is_empty [FINDING-002]", function()
+      local diff = table.concat({
+        "diff --git a/legacy_payments.py b/payments_gateway.py",
+        "similarity index 100%",
+        "rename from legacy_payments.py",
+        "rename to payments_gateway.py",
+      }, "\n")
+      local result = rich.split_diff_by_file(diff)
+      assert.equals(1, #result)
+      assert.equals("payments_gateway.py", result[1].path)
+      assert.is_true(result[1].is_empty)
+      assert.is_false(result[1].is_binary)
+    end)
+
+    -- FINDING-002: real-path regression — empty new file has no @@ hunk
+    it("flags an empty new file as is_empty [FINDING-002]", function()
+      local diff = table.concat({
+        "diff --git a/src/payments/__init__.py b/src/payments/__init__.py",
+        "new file mode 100644",
+        "index 0000000..e69de29",
+      }, "\n")
+      local result = rich.split_diff_by_file(diff)
+      assert.equals(1, #result)
+      assert.is_true(result[1].is_empty)
+      assert.is_false(result[1].is_binary)
+    end)
+
+    -- FINDING-002: a normal edit with @@ hunks must NOT be flagged as is_empty
+    it("does not flag a normal edit (with @@ hunk) as is_empty [FINDING-002]", function()
+      local diff = table.concat({
+        "diff --git a/foo.lua b/foo.lua",
+        "index 1111111..2222222 100644",
+        "--- a/foo.lua",
+        "+++ b/foo.lua",
+        "@@ -1,2 +1,3 @@",
+        " local x = 1",
+        "+local y = 2",
+        " return x",
+      }, "\n")
+      local result = rich.split_diff_by_file(diff)
+      assert.equals(1, #result)
+      assert.is_falsy(result[1].is_empty)
+    end)
   end)
 
   -- ── split_into_chunks ────────────────────────────────────────────────
@@ -133,6 +178,33 @@ describe("input.rich — parsing helpers", function()
       }
       local buckets = rich.bucket_files(file_entries, cfg)
       assert.equals(1, #buckets.stat_only)
+      assert.equals(0, #buckets.large)
+      assert.equals(0, #buckets.small_inline)
+      assert.equals(0, #buckets.small_batched)
+    end)
+
+    -- FINDING-002: end-to-end real-path regression
+    -- Entries produced by split_diff_by_file for rename and empty-file diffs must
+    -- land in stat_only (not small_inline) via the is_empty flag. [FINDING-002]
+    it("routes real split_diff_by_file entries for rename and empty-file to stat_only [FINDING-002]", function()
+      local rename_diff = table.concat({
+        "diff --git a/legacy_payments.py b/payments_gateway.py",
+        "similarity index 100%",
+        "rename from legacy_payments.py",
+        "rename to payments_gateway.py",
+      }, "\n")
+      local empty_file_diff = table.concat({
+        "diff --git a/src/payments/__init__.py b/src/payments/__init__.py",
+        "new file mode 100644",
+        "index 0000000..e69de29",
+      }, "\n")
+      local combined = rename_diff .. "\n" .. empty_file_diff
+
+      local entries = rich.split_diff_by_file(combined)
+      assert.equals(2, #entries)
+
+      local buckets = rich.bucket_files(entries, { small_file_chars = 800, max_small_files_inline = 10 })
+      assert.equals(2, #buckets.stat_only)
       assert.equals(0, #buckets.large)
       assert.equals(0, #buckets.small_inline)
       assert.equals(0, #buckets.small_batched)

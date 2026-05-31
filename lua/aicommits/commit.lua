@@ -71,6 +71,8 @@ function M.generate_and_commit()
         return
       end
 
+      picker.show_status("Generating commit message...")
+
       provider:generate_commit_message(final_payload, provider_config, function(err, messages)
         if err then
           picker.close_status()

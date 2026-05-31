@@ -280,10 +280,32 @@ function M.show(messages, opts, callbacks)
   })
 end
 
--- Show a status message in a floating window
+-- Show a status message in a floating window.
+-- When a status window is already open and valid, rewrites the buffer content
+-- in place to avoid the close→recreate flicker on phase transitions.
 -- @param message string The status message to display
 function M.show_status(message)
-  -- Close any existing status window
+  -- Prepare content with padding (shared between update and create paths)
+  local lines = {
+    "", -- Top padding
+    " " .. message, -- Message with horizontal padding
+    "", -- Bottom padding
+  }
+
+  -- If the status window is already open and valid, update in place
+  if
+    status_state.win
+    and vim.api.nvim_win_is_valid(status_state.win)
+    and status_state.buf
+    and vim.api.nvim_buf_is_valid(status_state.buf)
+  then
+    vim.api.nvim_buf_set_option(status_state.buf, "modifiable", true)
+    vim.api.nvim_buf_set_lines(status_state.buf, 0, -1, false, lines)
+    vim.api.nvim_buf_set_option(status_state.buf, "modifiable", false)
+    return
+  end
+
+  -- No valid status window exists — close any stale state and create a new one
   close_status()
 
   -- Also close picker if it's open (status transitions to picker)
@@ -293,13 +315,6 @@ function M.show_status(message)
   status_state.buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_option(status_state.buf, "modifiable", false)
   vim.api.nvim_buf_set_option(status_state.buf, "bufhidden", "wipe")
-
-  -- Prepare content with padding
-  local lines = {
-    "", -- Top padding
-    " " .. message, -- Message with horizontal padding
-    "", -- Bottom padding
-  }
 
   -- Set buffer content
   vim.api.nvim_buf_set_option(status_state.buf, "modifiable", true)

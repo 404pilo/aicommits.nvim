@@ -416,3 +416,79 @@ describe("commit.lua — husky injection ordering", function()
       "Expected commitlint_resolved = true in provider_config")
   end)
 end)
+
+-- FINDING-001 regression: show_status("Generating commit message...") is called
+-- between input.prepare resolving and generate_commit_message executing
+describe("commit.lua — generate phase status coverage", function()
+  it("calls show_status with 'Generating commit message...' during the generate phase", function()
+    local config = require("aicommits.config")
+    config.setup({ large_diff = { mode = "always" } })
+
+    -- Stub git operations
+    local git = require("aicommits.git")
+    local orig_is_repo  = git.is_git_repo
+    local orig_get_diff = git.get_staged_diff
+    git.is_git_repo   = function() return true end
+    git.get_staged_diff = function(cb)
+      cb(nil, { diff = "raw-diff", files = { "a.lua" } })
+    end
+
+    -- Stub provider manager
+    local providers = require("aicommits.providers")
+    local orig_get_active = providers.get_active_provider
+    providers.get_active_provider = function()
+      return {
+        name = "test",
+        generate_commit_message = function(self, _payload, _cfg, cb)
+          cb(nil, { "test: do stuff" })
+        end,
+      }, nil
+    end
+
+    -- Stub input.prepare to pass straight through
+    package.loaded["aicommits.input"] = nil
+    package.preload["aicommits.input"] = function()
+      return {
+        prepare = function(_dd, _p, _pc, cb)
+          cb(nil, "PAYLOAD")
+        end,
+      }
+    end
+
+    -- Capture every message passed to show_status
+    local picker = require("aicommits.ui.picker")
+    local orig_show  = picker.show_status
+    local orig_close = picker.close_status
+    local captured_messages = {}
+    picker.show_status  = function(msg) table.insert(captured_messages, msg) end
+    picker.close_status = function() end
+
+    local ui = require("aicommits.ui")
+    local orig_prompt = ui.show_commit_prompt
+    ui.show_commit_prompt = function() end
+
+    -- Run
+    package.loaded["aicommits.commit"] = nil
+    require("aicommits.commit").generate_and_commit()
+
+    -- Restore
+    git.is_git_repo       = orig_is_repo
+    git.get_staged_diff   = orig_get_diff
+    providers.get_active_provider = orig_get_active
+    package.preload["aicommits.input"] = nil
+    package.loaded["aicommits.input"]  = nil
+    picker.show_status  = orig_show
+    picker.close_status = orig_close
+    ui.show_commit_prompt = orig_prompt
+
+    -- Assert the generate-phase status message was emitted
+    local found = false
+    for _, msg in ipairs(captured_messages) do
+      if msg == "Generating commit message..." then
+        found = true
+        break
+      end
+    end
+    assert.is_true(found, "Expected 'Generating commit message...' among captured status messages: " .. table.concat(captured_messages, ", "))
+  end)
+end)
