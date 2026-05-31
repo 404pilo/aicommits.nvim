@@ -22,6 +22,11 @@ describe("vertex provider", function()
       assert.is_function(vertex.get_auth_headers)
       assert.is_function(vertex.get_capabilities)
     end)
+
+    -- GAP: provider-summarize-interface-exists (vertex)
+    it("exposes summarize as a function", function()
+      assert.is_function(vertex.summarize)
+    end)
   end)
 
   describe("validate_config", function()
@@ -352,6 +357,117 @@ describe("vertex provider", function()
 
       -- Should only call gcloud once due to caching
       assert.equals(1, gcloud_call_count)
+    end)
+  end)
+
+  describe("summarize()", function()
+    local orig_jobstart
+    local orig_executable
+    local M
+
+    before_each(function()
+      -- Re-require to get a fresh module reference for cache fields.
+      package.loaded["aicommits.providers.vertex"] = nil
+      M = require("aicommits.providers.vertex")
+      -- Reset token cache so each test starts without a cached token.
+      M._cached_token = nil
+      M._token_expiry = 0
+      orig_jobstart = vim.fn.jobstart
+      -- Stub vim.fn.executable so generate_token's is_gcloud_available() check
+      -- always passes regardless of whether gcloud is installed on the test machine.
+      orig_executable = vim.fn.executable
+      vim.fn.executable = function(cmd)
+        if cmd == "gcloud" then
+          return 1
+        end
+        return orig_executable(cmd)
+      end
+    end)
+
+    after_each(function()
+      vim.fn.jobstart = orig_jobstart
+      vim.fn.executable = orig_executable
+    end)
+
+    it("calls callback with summary text on success", function()
+      -- Stub http.post to return a canned Vertex response
+      local http = require("aicommits.http")
+      local orig_post = http.post
+      http.post = function(_url, _headers, _body, cb)
+        cb(
+          nil,
+          vim.json.encode({
+            candidates = {
+              {
+                content = {
+                  parts = { { text = "- refactored vertex helper" } },
+                },
+              },
+            },
+          })
+        )
+      end
+
+      -- Stub vim.fn.jobstart to inject a fake token synchronously.
+      vim.fn.jobstart = function(cmd, opts)
+        if opts.on_stdout then
+          opts.on_stdout(0, { "fake.token.here" }, "stdout")
+        end
+        if opts.on_exit then
+          opts.on_exit(0, 0, "exit")
+        end
+        return 1
+      end
+
+      local err, summary
+      M:summarize(
+        "diff text",
+        { prompt_kind = "chunk", file_path = "a.lua", max_tokens = 220, temperature = 0.2 },
+        { project = "my-project", location = "us-central1", model = "gemini-2.0-flash-lite" },
+        function(e, s)
+          err = e
+          summary = s
+        end
+      )
+
+      assert.is_nil(err)
+      assert.is_string(summary)
+      assert.is_truthy(summary:match("vertex helper"))
+
+      http.post = orig_post
+    end)
+
+    it("calls callback with error when http.post returns error", function()
+      local http = require("aicommits.http")
+      local orig_post = http.post
+      http.post = function(_url, _headers, _body, cb)
+        cb("network error", nil)
+      end
+
+      -- Stub vim.fn.jobstart to inject a fake token synchronously.
+      vim.fn.jobstart = function(cmd, opts)
+        if opts.on_stdout then
+          opts.on_stdout(0, { "fake.token.here" }, "stdout")
+        end
+        if opts.on_exit then
+          opts.on_exit(0, 0, "exit")
+        end
+        return 1
+      end
+
+      local err
+      M:summarize(
+        "diff text",
+        { prompt_kind = "chunk", file_path = "a.lua", max_tokens = 220, temperature = 0.2 },
+        { project = "my-project", location = "us-central1" },
+        function(e, _)
+          err = e
+        end
+      )
+
+      assert.is_string(err)
+
+      http.post = orig_post
     end)
   end)
 end)

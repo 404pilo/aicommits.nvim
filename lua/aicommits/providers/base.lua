@@ -40,6 +40,15 @@ M.Provider = {
       max_generations = 1, -- Maximum number of messages that can be generated
     }
   end,
+
+  -- Summarize a piece of text (diff chunk, chunk summaries, or small-file batch)
+  -- @param text           string  The content to summarize
+  -- @param opts           table   { prompt_kind, file_path, model, max_tokens, temperature }
+  -- @param provider_config table  Same table as generate_commit_message receives
+  -- @param callback       function(error, summary_text)
+  summarize = function(self, text, opts, provider_config, callback)
+    error(string.format("Provider '%s' must implement summarize", self.name or "unknown"))
+  end,
 }
 
 -- Create a new provider instance

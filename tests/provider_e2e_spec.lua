@@ -4,8 +4,17 @@ describe("provider system E2E", function()
   local aicommits
   local config
   local providers
+  local orig_openai_key
 
   before_each(function()
+    -- Make API-key resolution deterministic: the openai provider's
+    -- validate_config (and get_active_provider) require a resolvable key from
+    -- config or environment. Inject a dummy OPENAI_API_KEY so retrieval tests
+    -- don't depend on the ambient environment, and so the "key can come from
+    -- environment" case is genuinely exercised. Restored in after_each.
+    orig_openai_key = vim.env.OPENAI_API_KEY
+    vim.env.OPENAI_API_KEY = "test-key-e2e"
+
     -- Clear package cache
     package.loaded["aicommits"] = nil
     package.loaded["aicommits.config"] = nil
@@ -17,6 +26,10 @@ describe("provider system E2E", function()
     aicommits = require("aicommits")
     config = require("aicommits.config")
     providers = require("aicommits.providers")
+  end)
+
+  after_each(function()
+    vim.env.OPENAI_API_KEY = orig_openai_key
   end)
 
   describe("Phase 1: Basic loading & initialization", function()

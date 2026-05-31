@@ -21,6 +21,11 @@ describe("gemini-api provider", function()
       assert.is_function(gemini.get_auth_headers)
       assert.is_function(gemini.get_capabilities)
     end)
+
+    -- GAP: provider-summarize-interface-exists (gemini)
+    it("exposes summarize as a function", function()
+      assert.is_function(gemini.summarize)
+    end)
   end)
 
   describe("validate_config", function()
@@ -274,6 +279,69 @@ describe("gemini-api provider", function()
       assert.equals(true, caps.supports_streaming)
       assert.equals(true, caps.supports_multiple_generations)
       assert.equals(8, caps.max_generations)
+    end)
+  end)
+
+  describe("summarize()", function()
+    it("calls callback with summary text", function()
+      -- Stub http.post to return a canned response
+      local http = require("aicommits.http")
+      local orig_post = http.post
+      http.post = function(_url, _headers, _body, cb)
+        cb(
+          nil,
+          vim.json.encode({
+            candidates = {
+              {
+                content = {
+                  parts = { { text = "- added helper function foo()" } },
+                },
+              },
+            },
+          })
+        )
+      end
+
+      local provider = require("aicommits.providers.gemini")
+      local err, summary
+      provider:summarize(
+        "diff text",
+        { prompt_kind = "chunk", file_path = "a.lua", max_tokens = 220, temperature = 0.2 },
+        { api_key = "test-key", model = "gemini-2.5-flash" },
+        function(e, s)
+          err = e
+          summary = s
+        end
+      )
+
+      assert.is_nil(err)
+      assert.is_string(summary)
+      assert.is_truthy(summary:match("foo"))
+
+      http.post = orig_post
+    end)
+
+    it("calls callback with error when API returns error", function()
+      local http = require("aicommits.http")
+      local orig_post = http.post
+      http.post = function(_url, _headers, _body, cb)
+        cb("network error", nil)
+      end
+
+      local provider = require("aicommits.providers.gemini")
+      local err
+      provider:summarize(
+        "diff text",
+        { prompt_kind = "chunk", file_path = "a.lua", max_tokens = 220, temperature = 0.2 },
+        { api_key = "test-key" },
+        function(e, _)
+          err = e
+        end
+      )
+
+      assert.is_string(err)
+
+      http.post = orig_post
     end)
   end)
 end)

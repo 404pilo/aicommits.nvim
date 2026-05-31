@@ -64,4 +64,42 @@ describe("picker", function()
       assert.matches("commitlint%*", title)
     end)
   end)
+
+  describe("show_status() in-place reuse", function()
+    it("reuses the same window on repeated calls instead of recreating it", function()
+      -- First call: creates the status float
+      picker.show_status("First")
+
+      -- Collect floating windows after the first call
+      local function get_floats()
+        local floats = {}
+        for _, w in ipairs(vim.api.nvim_list_wins()) do
+          if vim.api.nvim_win_get_config(w).relative ~= "" then
+            table.insert(floats, w)
+          end
+        end
+        return floats
+      end
+
+      local floats_after_first = get_floats()
+      assert.equals(1, #floats_after_first, "expected exactly 1 floating window after first show_status")
+      local first_win = floats_after_first[1]
+
+      -- Second call: should reuse the same window, not create a new one
+      picker.show_status("Second")
+
+      local floats_after_second = get_floats()
+      assert.equals(1, #floats_after_second, "expected exactly 1 floating window after second show_status")
+      local second_win = floats_after_second[1]
+
+      -- The window id must be identical (reuse, not recreate)
+      assert.equals(first_win, second_win, "show_status must reuse the existing window, not create a new one")
+
+      -- The buffer content must now reflect "Second"
+      local buf = vim.api.nvim_win_get_buf(second_win)
+      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+      local content = table.concat(lines, "\n")
+      assert.matches("Second", content, "buffer content must contain the new message")
+    end)
+  end)
 end)

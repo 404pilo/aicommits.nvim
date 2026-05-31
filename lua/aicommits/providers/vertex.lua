@@ -197,6 +197,69 @@ function M:generate_commit_message(diff, config, callback)
   end)
 end
 
+-- Summarize a piece of text using Vertex AI
+-- @param text           string  The content to summarize
+-- @param opts           table   { prompt_kind, file_path, model, max_tokens, temperature }
+-- @param provider_config table  Provider configuration
+-- @param callback       function(error, summary_text)
+function M:summarize(text, opts, provider_config, callback)
+  generate_token(function(err, token)
+    if err then
+      callback(err, nil)
+      return
+    end
+
+    local model = opts.model or provider_config.model or "gemini-2.0-flash-lite"
+    local project = provider_config.project
+    local location = provider_config.location or "us-central1"
+    local max_tokens = opts.max_tokens or 220
+    local temperature = opts.temperature or 0.2
+
+    local prompt =
+      require("aicommits.prompts").build_summary_prompt(opts.prompt_kind, text, { file_path = opts.file_path })
+
+    local host = location == "global" and "aiplatform.googleapis.com" or location .. "-aiplatform.googleapis.com"
+    local endpoint = string.format(
+      "https://%s/v1/projects/%s/locations/%s/publishers/google/models/%s:generateContent",
+      host,
+      project,
+      location,
+      model
+    )
+
+    local request_body = {
+      contents = {
+        { role = "user", parts = { { text = prompt.system .. "\n\n" .. prompt.user } } },
+      },
+      generationConfig = { temperature = temperature, maxOutputTokens = max_tokens, candidateCount = 1 },
+    }
+
+    local headers = { Authorization = "Bearer " .. token, ["Content-Type"] = "application/json" }
+
+    http.post(endpoint, headers, vim.json.encode(request_body), function(http_err, response_body)
+      if http_err then
+        callback(http_err, nil)
+        return
+      end
+      local ok, response = pcall(vim.json.decode, response_body)
+      if not ok then
+        callback("Failed to parse Vertex summarize response: " .. tostring(response), nil)
+        return
+      end
+      if response.error then
+        callback("Vertex AI Error: " .. (response.error.message or vim.inspect(response.error)), nil)
+        return
+      end
+      local text_out = vim.tbl_get(response, "candidates", 1, "content", "parts", 1, "text") or ""
+      if text_out == "" then
+        callback("Vertex returned empty summary", nil)
+        return
+      end
+      callback(nil, text_out)
+    end)
+  end)
+end
+
 -- Validate Vertex AI provider configuration
 -- @param config table Provider configuration
 -- @return boolean valid True if configuration is valid

@@ -119,7 +119,7 @@ describe("aicommits.git", function()
       assert.is_string(root)
     end)
 
-    it("returns a path that contains a .git directory", function()
+    it("returns a path that contains a .git entry", function()
       if not git.is_git_repo() then
         pending("Not in a git repository, skipping test")
         return
@@ -127,7 +127,11 @@ describe("aicommits.git", function()
 
       local root = git.get_git_root()
       assert.is_string(root)
-      assert.equals(1, vim.fn.isdirectory(root .. "/.git"))
+      -- `.git` is a directory in a normal checkout but a file (gitdir pointer)
+      -- inside a linked worktree or submodule; accept either.
+      local git_entry = root .. "/.git"
+      local exists = vim.fn.isdirectory(git_entry) == 1 or vim.fn.filereadable(git_entry) == 1
+      assert.is_true(exists)
     end)
   end)
 
@@ -142,6 +146,82 @@ describe("aicommits.git", function()
       assert.has_no.errors(function()
         git.refresh_git_clients()
       end)
+    end)
+  end)
+
+  describe("get_staged_stat()", function()
+    -- vim.v is a read-only Neovim proxy; replace it with a plain table so tests
+    -- can write shell_error without errors.
+    local orig_vim_v
+
+    before_each(function()
+      orig_vim_v = vim.v
+      vim.v = setmetatable({}, { __newindex = rawset, __index = orig_vim_v })
+    end)
+
+    after_each(function()
+      vim.v = orig_vim_v
+    end)
+
+    it("calls callback with a string when there are staged changes", function()
+      -- Stub vim.fn.system to return a fake stat line
+      local orig_system = vim.fn.system
+
+      vim.fn.system = function(_args)
+        vim.v.shell_error = 0
+        return " foo.lua | 3 +++\n 1 file changed, 3 insertions(+)\n"
+      end
+
+      local result_err, result_stat
+      require("aicommits.git").get_staged_stat(function(err, stat)
+        result_err = err
+        result_stat = stat
+      end)
+
+      assert.is_nil(result_err)
+      assert.is_string(result_stat)
+      assert.is_truthy(result_stat:match("file changed"))
+
+      vim.fn.system = orig_system
+    end)
+
+    it("calls callback with error when git fails", function()
+      local orig_system = vim.fn.system
+      vim.fn.system = function(_args)
+        vim.v.shell_error = 1
+        return ""
+      end
+
+      local result_err
+      require("aicommits.git").get_staged_stat(function(err, _)
+        result_err = err
+      end)
+
+      assert.is_string(result_err)
+      assert.is_truthy(result_err:match("[Ss]tat"))
+
+      vim.fn.system = orig_system
+    end)
+
+    -- GAP: git-get-staged-stat-synchronous-callback
+    it("invokes the callback synchronously in the same call frame", function()
+      local orig_system = vim.fn.system
+      vim.fn.system = function(_args)
+        vim.v.shell_error = 0
+        return " foo.lua | 2 ++\n 1 file changed\n"
+      end
+
+      -- If the callback fires synchronously, `invoked` will be true immediately
+      -- after the call returns, before we even reach the assertion below.
+      local invoked = false
+      require("aicommits.git").get_staged_stat(function(_err, _stat)
+        invoked = true
+      end)
+
+      -- No asynchronous waiting: the flag must already be set.
+      assert.is_true(invoked)
+
+      vim.fn.system = orig_system
     end)
   end)
 end)
