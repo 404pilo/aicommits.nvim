@@ -140,6 +140,21 @@ function M.split_into_chunks(file_diff, chunk_chars)
   return chunks
 end
 
+-- Split a file diff into chunks and, when needed, grow chunk size so chunk count
+-- can fit under the max chunk cap.
+-- @param file_diff string
+-- @param chunk_chars number
+-- @param max_chunks number
+-- @return table
+function M.chunk_file_capped(file_diff, chunk_chars, max_chunks)
+  local chunks = M.split_into_chunks(file_diff, chunk_chars)
+  if #chunks > max_chunks then
+    local grown = math.ceil(#file_diff / max_chunks)
+    chunks = M.split_into_chunks(file_diff, grown)
+  end
+  return chunks
+end
+
 -- Classify per-file diff entries into buckets.
 -- Returns { large = [], small_inline = [], small_batched = [], stat_only = [] }
 -- @param file_entries table  Array of { path, diff, is_binary, is_empty } from split_diff_by_file
@@ -392,10 +407,10 @@ function M.prepare(diff_data, provider, provider_config, callback)
           check_done()
         end
 
-        local chunks = M.split_into_chunks(local_entry.diff, ld_cfg.chunk_chars)
+        local chunks = M.chunk_file_capped(local_entry.diff, ld_cfg.chunk_chars, ld_cfg.max_chunks_per_file)
 
-        -- Overflow: demote to stat-only WITHOUT incrementing summary_attempts so
-        -- this file doesn't count toward the all-failed threshold.
+        -- Overflow after growth: demote to stat-only WITHOUT incrementing
+        -- summary_attempts so this file doesn't count toward all-failed threshold.
         if #chunks > ld_cfg.max_chunks_per_file then
           large_results[entry_idx] = {
             path = local_entry.path,
