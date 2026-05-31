@@ -119,7 +119,7 @@ describe("aicommits.git", function()
       assert.is_string(root)
     end)
 
-    it("returns a path that contains a .git directory", function()
+    it("returns a path that contains a .git entry", function()
       if not git.is_git_repo() then
         pending("Not in a git repository, skipping test")
         return
@@ -127,7 +127,11 @@ describe("aicommits.git", function()
 
       local root = git.get_git_root()
       assert.is_string(root)
-      assert.equals(1, vim.fn.isdirectory(root .. "/.git"))
+      -- `.git` is a directory in a normal checkout but a file (gitdir pointer)
+      -- inside a linked worktree or submodule; accept either.
+      local git_entry = root .. "/.git"
+      local exists = vim.fn.isdirectory(git_entry) == 1 or vim.fn.filereadable(git_entry) == 1
+      assert.is_true(exists)
     end)
   end)
 
