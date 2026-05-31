@@ -66,52 +66,77 @@ end
 -- @param file_diff  string  Diff text for one file
 -- @param chunk_chars number Maximum characters per chunk
 -- @return table  Array of chunk strings
+local function split_header_and_hunks(file_diff)
+  local header_lines = {}
+  local hunks = {}
+  local current_hunk_lines = nil
+
+  for line in (file_diff .. "\n"):gmatch("([^\n]*)\n") do
+    if line:match("^@@") then
+      if current_hunk_lines then
+        table.insert(hunks, table.concat(current_hunk_lines, "\n"))
+      end
+      current_hunk_lines = { line }
+    elseif current_hunk_lines then
+      table.insert(current_hunk_lines, line)
+    else
+      table.insert(header_lines, line)
+    end
+  end
+
+  if current_hunk_lines then
+    table.insert(hunks, table.concat(current_hunk_lines, "\n"))
+  end
+
+  return table.concat(header_lines, "\n"), hunks
+end
+
 function M.split_into_chunks(file_diff, chunk_chars)
   if not file_diff or file_diff == "" then
     return {}
   end
 
-  -- Collect individual hunks (split on @@ lines)
-  local hunks = {}
-  local current_hunk_lines = {}
-
-  for line in (file_diff .. "\n"):gmatch("([^\n]*)\n") do
-    if line:match("^@@") and #current_hunk_lines > 0 then
-      table.insert(hunks, table.concat(current_hunk_lines, "\n"))
-      current_hunk_lines = { line }
-    else
-      table.insert(current_hunk_lines, line)
-    end
-  end
-  if #current_hunk_lines > 0 then
-    table.insert(hunks, table.concat(current_hunk_lines, "\n"))
+  local header, hunks = split_header_and_hunks(file_diff)
+  if #hunks == 0 then
+    return {}
   end
 
   -- Pack hunks into chunks without splitting mid-hunk
   local chunks = {}
   local current_chunk_parts = {}
-  local current_chunk_len = 0
+  local current_chunk_len = #header
+  local header_separator_len = (header ~= "") and 1 or 0
+
+  local function flush_current()
+    if #current_chunk_parts == 0 then
+      return
+    end
+
+    local body = table.concat(current_chunk_parts, "\n")
+    if header ~= "" then
+      table.insert(chunks, header .. "\n" .. body)
+    else
+      table.insert(chunks, body)
+    end
+  end
 
   for _, hunk in ipairs(hunks) do
     local hlen = #hunk
     if #current_chunk_parts == 0 then
       -- Always start a new chunk with the first hunk
       table.insert(current_chunk_parts, hunk)
-      current_chunk_len = hlen
+      current_chunk_len = #header + header_separator_len + hlen
     elseif current_chunk_len + 1 + hlen <= chunk_chars then
       table.insert(current_chunk_parts, hunk)
       current_chunk_len = current_chunk_len + 1 + hlen
     else
-      table.insert(chunks, table.concat(current_chunk_parts, "\n"))
+      flush_current()
       current_chunk_parts = { hunk }
-      current_chunk_len = hlen
+      current_chunk_len = #header + header_separator_len + hlen
     end
   end
 
-  if #current_chunk_parts > 0 then
-    table.insert(chunks, table.concat(current_chunk_parts, "\n"))
-  end
-
+  flush_current()
   return chunks
 end
 

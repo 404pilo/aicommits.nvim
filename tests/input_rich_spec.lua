@@ -135,6 +135,28 @@ describe("input.rich — parsing helpers", function()
       assert.equals(1, #chunks)
       assert.is_truthy(chunks[1]:match("@@ %-1,200"))
     end)
+
+    it("replays the file header at the start of every emitted chunk", function()
+      local header = table.concat({
+        "diff --git a/big.lua b/big.lua",
+        "index 1111111..2222222 100644",
+        "--- a/big.lua",
+        "+++ b/big.lua",
+      }, "\n")
+
+      local h1 = make_hunk(4)
+      local h2 = make_hunk(4)
+      local h3 = make_hunk(4)
+      local file_diff = header .. "\n" .. table.concat({ h1, h2, h3 }, "\n")
+      local chunk_chars = #header + 1 + #h1
+
+      local chunks = rich.split_into_chunks(file_diff, chunk_chars)
+      assert.is_true(#chunks >= 3)
+      for _, chunk in ipairs(chunks) do
+        assert.is_truthy(chunk:match("^diff %-%-git a/big%.lua b/big%.lua"))
+        assert.is_truthy(chunk:match("\n@@ "))
+      end
+    end)
   end)
 
   -- ── bucket_files ─────────────────────────────────────────────────────
