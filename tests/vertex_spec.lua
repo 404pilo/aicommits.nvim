@@ -377,7 +377,9 @@ describe("vertex provider", function()
       -- always passes regardless of whether gcloud is installed on the test machine.
       orig_executable = vim.fn.executable
       vim.fn.executable = function(cmd)
-        if cmd == "gcloud" then return 1 end
+        if cmd == "gcloud" then
+          return 1
+        end
         return orig_executable(cmd)
       end
     end)
@@ -392,21 +394,28 @@ describe("vertex provider", function()
       local http = require("aicommits.http")
       local orig_post = http.post
       http.post = function(_url, _headers, _body, cb)
-        cb(nil, vim.json.encode({
-          candidates = {
-            {
-              content = {
-                parts = { { text = "- refactored vertex helper" } },
+        cb(
+          nil,
+          vim.json.encode({
+            candidates = {
+              {
+                content = {
+                  parts = { { text = "- refactored vertex helper" } },
+                },
               },
             },
-          },
-        }))
+          })
+        )
       end
 
       -- Stub vim.fn.jobstart to inject a fake token synchronously.
       vim.fn.jobstart = function(cmd, opts)
-        if opts.on_stdout then opts.on_stdout(0, { "fake.token.here" }, "stdout") end
-        if opts.on_exit   then opts.on_exit(0, 0, "exit") end
+        if opts.on_stdout then
+          opts.on_stdout(0, { "fake.token.here" }, "stdout")
+        end
+        if opts.on_exit then
+          opts.on_exit(0, 0, "exit")
+        end
         return 1
       end
 
@@ -415,7 +424,10 @@ describe("vertex provider", function()
         "diff text",
         { prompt_kind = "chunk", file_path = "a.lua", max_tokens = 220, temperature = 0.2 },
         { project = "my-project", location = "us-central1", model = "gemini-2.0-flash-lite" },
-        function(e, s) err = e; summary = s end
+        function(e, s)
+          err = e
+          summary = s
+        end
       )
 
       assert.is_nil(err)
@@ -434,8 +446,12 @@ describe("vertex provider", function()
 
       -- Stub vim.fn.jobstart to inject a fake token synchronously.
       vim.fn.jobstart = function(cmd, opts)
-        if opts.on_stdout then opts.on_stdout(0, { "fake.token.here" }, "stdout") end
-        if opts.on_exit   then opts.on_exit(0, 0, "exit") end
+        if opts.on_stdout then
+          opts.on_stdout(0, { "fake.token.here" }, "stdout")
+        end
+        if opts.on_exit then
+          opts.on_exit(0, 0, "exit")
+        end
         return 1
       end
 
@@ -444,7 +460,9 @@ describe("vertex provider", function()
         "diff text",
         { prompt_kind = "chunk", file_path = "a.lua", max_tokens = 220, temperature = 0.2 },
         { project = "my-project", location = "us-central1" },
-        function(e, _) err = e end
+        function(e, _)
+          err = e
+        end
       )
 
       assert.is_string(err)

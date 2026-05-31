@@ -270,9 +270,11 @@ describe("commit.lua — input.prepare integration", function()
 
     -- Stub git operations
     local git = require("aicommits.git")
-    local orig_is_repo    = git.is_git_repo
-    local orig_get_diff   = git.get_staged_diff
-    git.is_git_repo    = function() return true end
+    local orig_is_repo = git.is_git_repo
+    local orig_get_diff = git.get_staged_diff
+    git.is_git_repo = function()
+      return true
+    end
     git.get_staged_diff = function(cb)
       cb(nil, { diff = "raw-diff", files = { "a.lua" } })
     end
@@ -288,7 +290,8 @@ describe("commit.lua — input.prepare integration", function()
           received_payload = payload
           cb(nil, { "test: do stuff" })
         end,
-      }, nil
+      },
+        nil
     end
 
     -- Stub input.prepare to return a transformed payload
@@ -305,7 +308,7 @@ describe("commit.lua — input.prepare integration", function()
     local picker = require("aicommits.ui.picker")
     local orig_show = picker.show_status
     local orig_close = picker.close_status
-    picker.show_status  = function() end
+    picker.show_status = function() end
     picker.close_status = function() end
 
     local ui = require("aicommits.ui")
@@ -317,13 +320,13 @@ describe("commit.lua — input.prepare integration", function()
     require("aicommits.commit").generate_and_commit()
 
     -- Restore
-    git.is_git_repo        = orig_is_repo
-    git.get_staged_diff    = orig_get_diff
+    git.is_git_repo = orig_is_repo
+    git.get_staged_diff = orig_get_diff
     providers.get_active_provider = orig_get_active
     package.preload["aicommits.input"] = nil
-    package.loaded["aicommits.input"]  = nil
-    picker.show_status   = orig_show
-    picker.close_status  = orig_close
+    package.loaded["aicommits.input"] = nil
+    picker.show_status = orig_show
+    picker.close_status = orig_close
     ui.show_commit_prompt = orig_show_prompt
 
     assert.equals("TRANSFORMED_PAYLOAD", received_payload)
@@ -341,14 +344,18 @@ describe("commit.lua — husky injection ordering", function()
 
     -- Stub git operations
     local git = require("aicommits.git")
-    local orig_is_repo   = git.is_git_repo
-    local orig_get_diff  = git.get_staged_diff
-    local orig_get_root  = git.get_git_root
-    git.is_git_repo   = function() return true end
+    local orig_is_repo = git.is_git_repo
+    local orig_get_diff = git.get_staged_diff
+    local orig_get_root = git.get_git_root
+    git.is_git_repo = function()
+      return true
+    end
     git.get_staged_diff = function(cb)
       cb(nil, { diff = "raw-diff", files = { "a.lua" } })
     end
-    git.get_git_root  = function() return "/fake/root" end
+    git.get_git_root = function()
+      return "/fake/root"
+    end
 
     -- Stub husky to return a commitlint config
     local husky = require("aicommits.husky")
@@ -366,7 +373,8 @@ describe("commit.lua — husky injection ordering", function()
         generate_commit_message = function(self, _payload, _cfg, cb)
           cb(nil, { "feat: test" })
         end,
-      }, nil
+      },
+        nil
     end
 
     -- Capture provider_config that arrives at input.prepare
@@ -383,9 +391,9 @@ describe("commit.lua — husky injection ordering", function()
 
     -- Stub picker and ui
     local picker = require("aicommits.ui.picker")
-    local orig_show  = picker.show_status
+    local orig_show = picker.show_status
     local orig_close = picker.close_status
-    picker.show_status  = function() end
+    picker.show_status = function() end
     picker.close_status = function() end
 
     local ui = require("aicommits.ui")
@@ -397,23 +405,27 @@ describe("commit.lua — husky injection ordering", function()
     require("aicommits.commit").generate_and_commit()
 
     -- Restore
-    git.is_git_repo        = orig_is_repo
-    git.get_staged_diff    = orig_get_diff
-    git.get_git_root       = orig_get_root
+    git.is_git_repo = orig_is_repo
+    git.get_staged_diff = orig_get_diff
+    git.get_git_root = orig_get_root
     husky.get_commitlint_rules = orig_get_rules
     providers.get_active_provider = orig_get_active
     package.preload["aicommits.input"] = nil
-    package.loaded["aicommits.input"]  = nil
-    picker.show_status  = orig_show
+    package.loaded["aicommits.input"] = nil
+    picker.show_status = orig_show
     picker.close_status = orig_close
     ui.show_commit_prompt = orig_prompt
 
     -- Assert that commitlint injection was in provider_config when prepare was called
     assert.is_not_nil(captured_provider_config)
-    assert.is_not_nil(captured_provider_config.commitlint_config,
-      "Expected commitlint_config to be injected into provider_config before input.prepare")
-    assert.is_true(captured_provider_config.commitlint_resolved,
-      "Expected commitlint_resolved = true in provider_config")
+    assert.is_not_nil(
+      captured_provider_config.commitlint_config,
+      "Expected commitlint_config to be injected into provider_config before input.prepare"
+    )
+    assert.is_true(
+      captured_provider_config.commitlint_resolved,
+      "Expected commitlint_resolved = true in provider_config"
+    )
   end)
 end)
 
@@ -426,9 +438,11 @@ describe("commit.lua — generate phase status coverage", function()
 
     -- Stub git operations
     local git = require("aicommits.git")
-    local orig_is_repo  = git.is_git_repo
+    local orig_is_repo = git.is_git_repo
     local orig_get_diff = git.get_staged_diff
-    git.is_git_repo   = function() return true end
+    git.is_git_repo = function()
+      return true
+    end
     git.get_staged_diff = function(cb)
       cb(nil, { diff = "raw-diff", files = { "a.lua" } })
     end
@@ -442,7 +456,8 @@ describe("commit.lua — generate phase status coverage", function()
         generate_commit_message = function(self, _payload, _cfg, cb)
           cb(nil, { "test: do stuff" })
         end,
-      }, nil
+      },
+        nil
     end
 
     -- Stub input.prepare to pass straight through
@@ -457,10 +472,12 @@ describe("commit.lua — generate phase status coverage", function()
 
     -- Capture every message passed to show_status
     local picker = require("aicommits.ui.picker")
-    local orig_show  = picker.show_status
+    local orig_show = picker.show_status
     local orig_close = picker.close_status
     local captured_messages = {}
-    picker.show_status  = function(msg) table.insert(captured_messages, msg) end
+    picker.show_status = function(msg)
+      table.insert(captured_messages, msg)
+    end
     picker.close_status = function() end
 
     local ui = require("aicommits.ui")
@@ -472,12 +489,12 @@ describe("commit.lua — generate phase status coverage", function()
     require("aicommits.commit").generate_and_commit()
 
     -- Restore
-    git.is_git_repo       = orig_is_repo
-    git.get_staged_diff   = orig_get_diff
+    git.is_git_repo = orig_is_repo
+    git.get_staged_diff = orig_get_diff
     providers.get_active_provider = orig_get_active
     package.preload["aicommits.input"] = nil
-    package.loaded["aicommits.input"]  = nil
-    picker.show_status  = orig_show
+    package.loaded["aicommits.input"] = nil
+    picker.show_status = orig_show
     picker.close_status = orig_close
     ui.show_commit_prompt = orig_prompt
 
@@ -489,6 +506,10 @@ describe("commit.lua — generate phase status coverage", function()
         break
       end
     end
-    assert.is_true(found, "Expected 'Generating commit message...' among captured status messages: " .. table.concat(captured_messages, ", "))
+    assert.is_true(
+      found,
+      "Expected 'Generating commit message...' among captured status messages: "
+        .. table.concat(captured_messages, ", ")
+    )
   end)
 end)

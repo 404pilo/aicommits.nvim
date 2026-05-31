@@ -35,13 +35,16 @@ describe("openai provider", function()
       local http = require("aicommits.http")
       local orig_post = http.post
       http.post = function(_url, _headers, _body, cb)
-        cb(nil, vim.json.encode({
-          choices = {
-            {
-              message = { content = "- updated openai helper" },
+        cb(
+          nil,
+          vim.json.encode({
+            choices = {
+              {
+                message = { content = "- updated openai helper" },
+              },
             },
-          },
-        }))
+          })
+        )
       end
 
       local provider = require("aicommits.providers.openai")
@@ -50,7 +53,10 @@ describe("openai provider", function()
         "diff text",
         { prompt_kind = "chunk", file_path = "a.lua", max_tokens = 220, temperature = 0.2 },
         { api_key = "test-key", model = "gpt-4.1-nano" },
-        function(e, s) err = e; summary = s end
+        function(e, s)
+          err = e
+          summary = s
+        end
       )
 
       assert.is_nil(err)
@@ -72,7 +78,9 @@ describe("openai provider", function()
         "diff text",
         { prompt_kind = "chunk", file_path = "a.lua", max_tokens = 220, temperature = 0.2 },
         { api_key = "test-key" },
-        function(e, _) err = e end
+        function(e, _)
+          err = e
+        end
       )
 
       assert.is_string(err)

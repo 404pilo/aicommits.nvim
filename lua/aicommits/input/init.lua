@@ -16,9 +16,9 @@ end
 -- @param callback       function(error, final_payload)
 function M.prepare(diff_data, provider, provider_config, callback)
   local config = require("aicommits.config")
-  local MODES  = config.LARGE_DIFF_MODES
-  local ld     = config.get("large_diff")
-  local mode   = ld and ld.mode or MODES.OFF
+  local MODES = config.LARGE_DIFF_MODES
+  local ld = config.get("large_diff")
+  local mode = ld and ld.mode or MODES.OFF
 
   local use_rich = false
 
@@ -32,8 +32,7 @@ function M.prepare(diff_data, provider, provider_config, callback)
   if use_rich and not supports_summarize(provider) then
     use_rich = false
     vim.notify(
-      "aicommits: active provider does not support diff summarization; "
-        .. "using standard input for this commit.",
+      "aicommits: active provider does not support diff summarization; " .. "using standard input for this commit.",
       vim.log.levels.WARN
     )
   end

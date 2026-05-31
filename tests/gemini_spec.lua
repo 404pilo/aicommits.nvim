@@ -288,15 +288,18 @@ describe("gemini-api provider", function()
       local http = require("aicommits.http")
       local orig_post = http.post
       http.post = function(_url, _headers, _body, cb)
-        cb(nil, vim.json.encode({
-          candidates = {
-            {
-              content = {
-                parts = { { text = "- added helper function foo()" } },
+        cb(
+          nil,
+          vim.json.encode({
+            candidates = {
+              {
+                content = {
+                  parts = { { text = "- added helper function foo()" } },
+                },
               },
             },
-          },
-        }))
+          })
+        )
       end
 
       local provider = require("aicommits.providers.gemini")
@@ -305,7 +308,10 @@ describe("gemini-api provider", function()
         "diff text",
         { prompt_kind = "chunk", file_path = "a.lua", max_tokens = 220, temperature = 0.2 },
         { api_key = "test-key", model = "gemini-2.5-flash" },
-        function(e, s) err = e; summary = s end
+        function(e, s)
+          err = e
+          summary = s
+        end
       )
 
       assert.is_nil(err)
@@ -328,7 +334,9 @@ describe("gemini-api provider", function()
         "diff text",
         { prompt_kind = "chunk", file_path = "a.lua", max_tokens = 220, temperature = 0.2 },
         { api_key = "test-key" },
-        function(e, _) err = e end
+        function(e, _)
+          err = e
+        end
       )
 
       assert.is_string(err)

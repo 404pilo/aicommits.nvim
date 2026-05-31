@@ -13,15 +13,19 @@ describe("input.init dispatcher", function()
 
     local called_default = false
     package.preload["aicommits.input.default"] = function()
-      return { prepare = function(_dd, _p, _pc, cb)
-        called_default = true
-        cb(nil, "raw")
-      end }
+      return {
+        prepare = function(_dd, _p, _pc, cb)
+          called_default = true
+          cb(nil, "raw")
+        end,
+      }
     end
     package.preload["aicommits.input.rich"] = function()
-      return { prepare = function(_dd, _p, _pc, cb)
-        error("should not be called")
-      end }
+      return {
+        prepare = function(_dd, _p, _pc, cb)
+          error("should not be called")
+        end,
+      }
     end
 
     local input = require("aicommits.input")
@@ -41,12 +45,19 @@ describe("input.init dispatcher", function()
 
     local called_default = false
     package.preload["aicommits.input.default"] = function()
-      return { prepare = function(_dd, _p, _pc, cb)
-        called_default = true; cb(nil, "raw")
-      end }
+      return {
+        prepare = function(_dd, _p, _pc, cb)
+          called_default = true
+          cb(nil, "raw")
+        end,
+      }
     end
     package.preload["aicommits.input.rich"] = function()
-      return { prepare = function() error("should not be called") end }
+      return {
+        prepare = function()
+          error("should not be called")
+        end,
+      }
     end
 
     local input = require("aicommits.input")
@@ -62,12 +73,19 @@ describe("input.init dispatcher", function()
 
     local called_rich = false
     package.preload["aicommits.input.default"] = function()
-      return { prepare = function() error("should not be called") end }
+      return {
+        prepare = function()
+          error("should not be called")
+        end,
+      }
     end
     package.preload["aicommits.input.rich"] = function()
-      return { prepare = function(_dd, _p, _pc, cb)
-        called_rich = true; cb(nil, "structured")
-      end }
+      return {
+        prepare = function(_dd, _p, _pc, cb)
+          called_rich = true
+          cb(nil, "structured")
+        end,
+      }
     end
 
     local input = require("aicommits.input")
@@ -83,12 +101,19 @@ describe("input.init dispatcher", function()
 
     local called_rich = false
     package.preload["aicommits.input.default"] = function()
-      return { prepare = function() error("should not be called") end }
+      return {
+        prepare = function()
+          error("should not be called")
+        end,
+      }
     end
     package.preload["aicommits.input.rich"] = function()
-      return { prepare = function(_dd, _p, _pc, cb)
-        called_rich = true; cb(nil, "structured")
-      end }
+      return {
+        prepare = function(_dd, _p, _pc, cb)
+          called_rich = true
+          cb(nil, "structured")
+        end,
+      }
     end
 
     local input = require("aicommits.input")
@@ -110,13 +135,19 @@ describe("input.init dispatcher", function()
 
     local called_default = false
     package.preload["aicommits.input.default"] = function()
-      return { prepare = function(_dd, _p, _pc, cb)
-        called_default = true
-        cb(nil, "raw")
-      end }
+      return {
+        prepare = function(_dd, _p, _pc, cb)
+          called_default = true
+          cb(nil, "raw")
+        end,
+      }
     end
     package.preload["aicommits.input.rich"] = function()
-      return { prepare = function() error("should not be called") end }
+      return {
+        prepare = function()
+          error("should not be called")
+        end,
+      }
     end
 
     local original_notify = vim.notify
@@ -145,13 +176,19 @@ describe("input.init dispatcher", function()
 
     local called_rich = false
     package.preload["aicommits.input.default"] = function()
-      return { prepare = function() error("should not be called") end }
+      return {
+        prepare = function()
+          error("should not be called")
+        end,
+      }
     end
     package.preload["aicommits.input.rich"] = function()
-      return { prepare = function(_dd, _p, _pc, cb)
-        called_rich = true
-        cb(nil, "structured")
-      end }
+      return {
+        prepare = function(_dd, _p, _pc, cb)
+          called_rich = true
+          cb(nil, "structured")
+        end,
+      }
     end
 
     local input = require("aicommits.input")

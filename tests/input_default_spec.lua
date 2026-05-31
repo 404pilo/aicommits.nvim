@@ -4,7 +4,10 @@ describe("input.default", function()
     local diff_data = { diff = "diff --git a/x.lua\n+hello", files = { "x.lua" } }
 
     local err, payload
-    default.prepare(diff_data, {}, {}, function(e, p) err = e; payload = p end)
+    default.prepare(diff_data, {}, {}, function(e, p)
+      err = e
+      payload = p
+    end)
 
     assert.is_nil(err)
     assert.equals(diff_data.diff, payload)
@@ -13,7 +16,10 @@ describe("input.default", function()
   it("passes through even when diff is empty string", function()
     local default = require("aicommits.input.default")
     local err, payload
-    default.prepare({ diff = "", files = {} }, {}, {}, function(e, p) err = e; payload = p end)
+    default.prepare({ diff = "", files = {} }, {}, {}, function(e, p)
+      err = e
+      payload = p
+    end)
     assert.is_nil(err)
     assert.equals("", payload)
   end)

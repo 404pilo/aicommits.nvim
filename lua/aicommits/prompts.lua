@@ -98,8 +98,7 @@ function M.build_summary_prompt(kind, payload, opts)
       system = "You are a code-change summarizer. Given the following chunk summaries"
         .. " for a single file, produce a single concise paragraph (<=4 sentences)"
         .. " describing the net effect of the changes.",
-      user = string.format(
-        "File: %s\n\nChunk summaries:\n%s", opts.file_path or "(unknown)", payload),
+      user = string.format("File: %s\n\nChunk summaries:\n%s", opts.file_path or "(unknown)", payload),
     }
   elseif kind == "small_batch" then
     return {

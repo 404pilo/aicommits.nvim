@@ -109,7 +109,9 @@ describe("input.rich — parsing helpers", function()
   describe("split_into_chunks()", function()
     local function make_hunk(n_lines)
       local lines = { "@@ -1," .. n_lines .. " +1," .. n_lines .. " @@" }
-      for i = 1, n_lines do lines[#lines + 1] = " line" .. i end
+      for i = 1, n_lines do
+        lines[#lines + 1] = " line" .. i
+      end
       return table.concat(lines, "\n")
     end
 
@@ -128,7 +130,7 @@ describe("input.rich — parsing helpers", function()
     end)
 
     it("puts an oversized single hunk into its own chunk", function()
-      local big_hunk = make_hunk(200)  -- > any reasonable chunk_chars for this test
+      local big_hunk = make_hunk(200) -- > any reasonable chunk_chars for this test
       local chunks = rich.split_into_chunks(big_hunk, 50)
       assert.equals(1, #chunks)
       assert.is_truthy(chunks[1]:match("@@ %-1,200"))
@@ -138,7 +140,7 @@ describe("input.rich — parsing helpers", function()
   -- ── bucket_files ─────────────────────────────────────────────────────
   describe("bucket_files()", function()
     local cfg = {
-      small_file_chars      = 100,
+      small_file_chars = 100,
       max_small_files_inline = 2,
     }
 
@@ -230,7 +232,9 @@ describe("make_scheduler()", function()
     rich = require("aicommits.input.rich")
     -- vim.schedule is not available in busted; stub it to fire synchronously.
     orig_vim_schedule = vim.schedule
-    vim.schedule = function(fn) fn() end
+    vim.schedule = function(fn)
+      fn()
+    end
   end)
 
   after_each(function()
@@ -255,7 +259,9 @@ describe("make_scheduler()", function()
 
     local function task(done)
       in_flight = in_flight + 1
-      if in_flight > in_flight_peak then in_flight_peak = in_flight end
+      if in_flight > in_flight_peak then
+        in_flight_peak = in_flight
+      end
       table.insert(done_fns, function()
         in_flight = in_flight - 1
         done()
@@ -263,7 +269,9 @@ describe("make_scheduler()", function()
     end
 
     -- Enqueue 4 tasks; only 2 should start immediately
-    for _ = 1, 4 do sched.run(task) end
+    for _ = 1, 4 do
+      sched.run(task)
+    end
 
     -- Complete all queued tasks
     while #done_fns > 0 do
@@ -298,7 +306,7 @@ describe("make_scheduler()", function()
 
     assert.equals(3, #completed)
     -- All three task indices were executed
-    assert.same({1, 2, 3}, completed)
+    assert.same({ 1, 2, 3 }, completed)
   end)
 
   it("clamps concurrency <= 0 and still runs queued tasks", function()
@@ -321,18 +329,20 @@ describe("prepare() integration", function()
     rich = require("aicommits.input.rich")
     -- rich.lua calls picker.show_status; stub it to prevent UI errors in tests.
     local picker = require("aicommits.ui.picker")
-    orig_picker_show  = picker.show_status
+    orig_picker_show = picker.show_status
     orig_picker_close = picker.close_status
-    picker.show_status  = function() end
+    picker.show_status = function() end
     picker.close_status = function() end
     -- make_scheduler uses vim.schedule; stub it to run synchronously.
     orig_vim_schedule = vim.schedule
-    vim.schedule = function(fn) fn() end
+    vim.schedule = function(fn)
+      fn()
+    end
   end)
 
   after_each(function()
     local picker = require("aicommits.ui.picker")
-    picker.show_status  = orig_picker_show
+    picker.show_status = orig_picker_show
     picker.close_status = orig_picker_close
     vim.schedule = orig_vim_schedule
   end)
@@ -353,8 +363,12 @@ describe("prepare() integration", function()
   local function stub_stat(stat_text)
     local git = require("aicommits.git")
     local orig = git.get_staged_stat
-    git.get_staged_stat = function(cb) cb(nil, stat_text) end
-    return function() git.get_staged_stat = orig end
+    git.get_staged_stat = function(cb)
+      cb(nil, stat_text)
+    end
+    return function()
+      git.get_staged_stat = orig
+    end
   end
 
   it("returns assembled payload for a single large file", function()
@@ -366,7 +380,7 @@ describe("prepare() integration", function()
       "@@ -1,5 +1,6 @@",
       " line1",
       "+line2",
-    }, "\n") .. string.rep("\nmore content", 30)  -- push over small_file_chars
+    }, "\n") .. string.rep("\nmore content", 30) -- push over small_file_chars
 
     local diff_data = { diff = big_diff, files = { "big.lua" } }
     local cfg_override = {
@@ -374,7 +388,7 @@ describe("prepare() integration", function()
       threshold_chars = 0,
       chunk_chars = 6000,
       max_chunks_per_file = 6,
-      small_file_chars = 50,  -- small threshold so big_diff is classified as large
+      small_file_chars = 50, -- small threshold so big_diff is classified as large
       max_small_files_inline = 10,
       small_file_batch_chars = 4000,
       summary_model = nil,
@@ -387,8 +401,10 @@ describe("prepare() integration", function()
     config.setup({ large_diff = cfg_override })
 
     local err, payload
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function(e, p)
+      err = e
+      payload = p
+    end)
 
     restore()
 
@@ -411,16 +427,25 @@ describe("prepare() integration", function()
 
     local diff_data = { diff = big_diff, files = { "big.lua" } }
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always", small_file_chars = 50,
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      max_small_files_inline = 10, small_file_batch_chars = 4000,
-      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        small_file_chars = 50,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        max_small_files_inline = 10,
+        small_file_batch_chars = 4000,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
     local err, _payload
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function(e, p) err = e; _payload = p end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function(e, p)
+      err = e
+      _payload = p
+    end)
 
     restore()
 
@@ -433,25 +458,31 @@ describe("prepare() integration", function()
     local provider = make_mock_provider("- a: changed\n- b: changed\n- c: changed")
 
     local mk = function(name)
-      return "diff --git a/" .. name .. " b/" .. name
-        .. "\n@@ -1 +1 @@\n-old\n+new"
+      return "diff --git a/" .. name .. " b/" .. name .. "\n@@ -1 +1 @@\n-old\n+new"
     end
     local diff = mk("a.lua") .. "\n" .. mk("b.lua") .. "\n" .. mk("c.lua")
     local diff_data = { diff = diff, files = { "a.lua", "b.lua", "c.lua" } }
 
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always",
-      small_file_chars = 10000,  -- all files are "small"
-      max_small_files_inline = 2,  -- 3 > 2 → small_batched
-      small_file_batch_chars = 4000,
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        small_file_chars = 10000, -- all files are "small"
+        max_small_files_inline = 2, -- 3 > 2 → small_batched
+        small_file_batch_chars = 4000,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
     local err, payload
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function(e, p)
+      err = e
+      payload = p
+    end)
 
     restore()
 
@@ -483,19 +514,25 @@ describe("prepare() integration", function()
     local diff_data = { diff = big_diff, files = { "big.lua" } }
 
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always",
-      small_file_chars = 1,     -- force large bucket
-      chunk_chars = 10,          -- tiny chunk_chars → many chunks
-      max_chunks_per_file = 2,   -- overflow at >2 chunks
-      max_small_files_inline = 10,
-      small_file_batch_chars = 4000,
-      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        small_file_chars = 1, -- force large bucket
+        chunk_chars = 10, -- tiny chunk_chars → many chunks
+        max_chunks_per_file = 2, -- overflow at >2 chunks
+        max_small_files_inline = 10,
+        small_file_batch_chars = 4000,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
     local err, payload
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function(e, p)
+      err = e
+      payload = p
+    end)
 
     restore()
 
@@ -522,8 +559,7 @@ describe("prepare() integration", function()
 
     -- Each diff is about 25 chars: "@@ -1 +1 @@\n-old\n+new" = 22 chars
     local mk = function(name, content)
-      return "diff --git a/" .. name .. " b/" .. name
-        .. "\n@@ -1 +1 @@\n" .. content
+      return "diff --git a/" .. name .. " b/" .. name .. "\n@@ -1 +1 @@\n" .. content
     end
     -- Make files with ~25 char diffs; batch_chars = 30 → each file in its own batch
     local file_a = mk("a.lua", string.rep("x", 20))
@@ -533,18 +569,25 @@ describe("prepare() integration", function()
     local diff_data = { diff = diff, files = { "a.lua", "b.lua", "c.lua" } }
 
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always",
-      small_file_chars = 10000,   -- all files are "small"
-      max_small_files_inline = 0, -- force small_batched (0 < 3)
-      small_file_batch_chars = 30, -- each ~25-char diff gets its own batch
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        small_file_chars = 10000, -- all files are "small"
+        max_small_files_inline = 0, -- force small_batched (0 < 3)
+        small_file_batch_chars = 30, -- each ~25-char diff gets its own batch
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
     local err, payload
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function(e, p)
+      err = e
+      payload = p
+    end)
 
     restore()
 
@@ -569,19 +612,26 @@ describe("prepare() integration", function()
     local diff_data = { diff = diff, files = { "abcdefghij.lua", "klmnopqrst.lua" } }
 
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always",
-      small_file_chars = 10000,
-      max_small_files_inline = 0,
-      -- Raw diff payload fits, but framed payload with "path\\n" + "\\n---\\n" must split.
-      small_file_batch_chars = 55,
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        small_file_chars = 10000,
+        max_small_files_inline = 0,
+        -- Raw diff payload fits, but framed payload with "path\\n" + "\\n---\\n" must split.
+        small_file_batch_chars = 55,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
     local err, payload
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function(e, p)
+      err = e
+      payload = p
+    end)
 
     restore()
 
@@ -602,21 +652,31 @@ describe("prepare() integration", function()
     local big_diff = table.concat({
       "diff --git a/big.lua b/big.lua",
       "@@ -1,3 +1,4 @@",
-      " a", "+b",
+      " a",
+      "+b",
     }, "\n") .. string.rep("\nx", 60)
 
     local diff_data = { diff = big_diff, files = { "big.lua" } }
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always", small_file_chars = 50,
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      max_small_files_inline = 10, small_file_batch_chars = 4000,
-      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        small_file_chars = 50,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        max_small_files_inline = 10,
+        small_file_batch_chars = 4000,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
     local err, payload
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function(e, p)
+      err = e
+      payload = p
+    end)
 
     restore()
 
@@ -657,17 +717,27 @@ describe("prepare() integration", function()
 
     local diff_data = { diff = big_diff, files = { "big.lua" } }
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always", small_file_chars = 1,
-      chunk_chars = 50, max_chunks_per_file = 10,
-      max_small_files_inline = 10, small_file_batch_chars = 4000,
-      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        small_file_chars = 1,
+        chunk_chars = 50,
+        max_chunks_per_file = 10,
+        max_small_files_inline = 10,
+        small_file_batch_chars = 4000,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
     local cb_fired = false
     local err, payload
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function(e, p) cb_fired = true; err = e; payload = p end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function(e, p)
+      cb_fired = true
+      err = e
+      payload = p
+    end)
 
     restore()
 
@@ -693,24 +763,31 @@ describe("prepare() integration", function()
     }
 
     local function mk_big(name)
-      return "diff --git a/" .. name .. " b/" .. name
-        .. "\n@@ -1,3 +1,4 @@\n a\n+b"
-        .. string.rep("\nx", 60)
+      return "diff --git a/" .. name .. " b/" .. name .. "\n@@ -1,3 +1,4 @@\n a\n+b" .. string.rep("\nx", 60)
     end
     local diff = mk_big("good.lua") .. "\n" .. mk_big("bad.lua")
     local diff_data = { diff = diff, files = { "good.lua", "bad.lua" } }
 
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always", small_file_chars = 50,
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      max_small_files_inline = 0, small_file_batch_chars = 4000,
-      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        small_file_chars = 50,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        max_small_files_inline = 0,
+        small_file_batch_chars = 4000,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
     local err, payload
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function(e, p)
+      err = e
+      payload = p
+    end)
 
     restore()
 
@@ -731,25 +808,31 @@ describe("prepare() integration", function()
     }
 
     local mk = function(name)
-      return "diff --git a/" .. name .. " b/" .. name
-        .. "\n@@ -1 +1 @@\n-old\n+new"
+      return "diff --git a/" .. name .. " b/" .. name .. "\n@@ -1 +1 @@\n-old\n+new"
     end
     local diff = mk("a.lua") .. "\n" .. mk("b.lua") .. "\n" .. mk("c.lua")
     local diff_data = { diff = diff, files = { "a.lua", "b.lua", "c.lua" } }
 
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always",
-      small_file_chars = 10000,
-      max_small_files_inline = 2,  -- 3 > 2 → small_batched
-      small_file_batch_chars = 4000,
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        small_file_chars = 10000,
+        max_small_files_inline = 2, -- 3 > 2 → small_batched
+        small_file_batch_chars = 4000,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
     local err, _payload
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function(e, p) err = e; _payload = p end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function(e, p)
+      err = e
+      _payload = p
+    end)
 
     restore()
 
@@ -780,24 +863,31 @@ describe("prepare() integration", function()
     }
 
     local function mk_big(name)
-      return "diff --git a/" .. name .. " b/" .. name
-        .. "\n@@ -1,3 +1,4 @@\n a\n+b"
-        .. string.rep("\nx", 60)
+      return "diff --git a/" .. name .. " b/" .. name .. "\n@@ -1,3 +1,4 @@\n a\n+b" .. string.rep("\nx", 60)
     end
     local diff = mk_big("a.lua") .. "\n" .. mk_big("b.lua") .. "\n" .. mk_big("c.lua")
     local diff_data = { diff = diff, files = { "a.lua", "b.lua", "c.lua" } }
 
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always", small_file_chars = 50,
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      max_small_files_inline = 0, small_file_batch_chars = 4000,
-      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        small_file_chars = 50,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        max_small_files_inline = 0,
+        small_file_batch_chars = 4000,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
     local err, payload
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function(e, p)
+      err = e
+      payload = p
+    end)
 
     restore()
 
@@ -823,25 +913,31 @@ describe("prepare() integration", function()
     }
 
     local mk = function(name)
-      return "diff --git a/" .. name .. " b/" .. name
-        .. "\n@@ -1 +1 @@\n-old\n+new"
+      return "diff --git a/" .. name .. " b/" .. name .. "\n@@ -1 +1 @@\n-old\n+new"
     end
     local diff = mk("a.lua") .. "\n" .. mk("b.lua")
     local diff_data = { diff = diff, files = { "a.lua", "b.lua" } }
 
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always",
-      small_file_chars = 10000,   -- both files are "small"
-      max_small_files_inline = 10, -- 2 <= 10 → small_inline
-      small_file_batch_chars = 4000,
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        small_file_chars = 10000, -- both files are "small"
+        max_small_files_inline = 10, -- 2 <= 10 → small_inline
+        small_file_batch_chars = 4000,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
     local err, payload
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function(e, p)
+      err = e
+      payload = p
+    end)
 
     restore()
 
@@ -855,7 +951,9 @@ describe("prepare() integration", function()
     -- Override the git stub to return an error
     local git = require("aicommits.git")
     local orig_stat = git.get_staged_stat
-    git.get_staged_stat = function(cb) cb("stat fetch error", nil) end
+    git.get_staged_stat = function(cb)
+      cb("stat fetch error", nil)
+    end
 
     local summarize_calls = 0
     local provider = {
@@ -868,16 +966,25 @@ describe("prepare() integration", function()
     local diff_data = { diff = "diff --git a/x.lua b/x.lua\n@@ -1 +1 @@\n-a\n+b", files = { "x.lua" } }
 
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always", small_file_chars = 50,
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      max_small_files_inline = 10, small_file_batch_chars = 4000,
-      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        small_file_chars = 50,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        max_small_files_inline = 10,
+        small_file_batch_chars = 4000,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
     local err, payload
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function(e, p)
+      err = e
+      payload = p
+    end)
 
     git.get_staged_stat = orig_stat
 
@@ -895,22 +1002,33 @@ describe("prepare() integration", function()
     local big_diff = table.concat({
       "diff --git a/big.lua b/big.lua",
       "@@ -1,5 +1,6 @@",
-      " line1", "+line2",
+      " line1",
+      "+line2",
     }, "\n") .. string.rep("\nmore content", 30)
 
     local diff_data = { diff = big_diff, files = { "big.lua" } }
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always", threshold_chars = 0,
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      small_file_chars = 50,
-      max_small_files_inline = 10, small_file_batch_chars = 4000,
-      summary_model = nil, summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        threshold_chars = 0,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        small_file_chars = 50,
+        max_small_files_inline = 10,
+        small_file_batch_chars = 4000,
+        summary_model = nil,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
     local err, payload
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function(e, p)
+      err = e
+      payload = p
+    end)
 
     restore()
 
@@ -928,22 +1046,33 @@ describe("prepare() integration", function()
     local big_diff = table.concat({
       "diff --git a/big.lua b/big.lua",
       "@@ -1,5 +1,6 @@",
-      " line1", "+line2",
+      " line1",
+      "+line2",
     }, "\n") .. string.rep("\nmore content", 30)
 
     local diff_data = { diff = big_diff, files = { "big.lua" } }
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always", threshold_chars = 0,
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      small_file_chars = 50,
-      max_small_files_inline = 10, small_file_batch_chars = 4000,
-      summary_model = nil, summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        threshold_chars = 0,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        small_file_chars = 50,
+        max_small_files_inline = 10,
+        small_file_batch_chars = 4000,
+        summary_model = nil,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
     local err, payload
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function(e, p)
+      err = e
+      payload = p
+    end)
 
     restore()
 
@@ -968,18 +1097,25 @@ describe("prepare() integration", function()
     local diff_data = { diff = diff, files = { "small.lua" } }
 
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always",
-      small_file_chars = 10000,   -- file is "small"
-      max_small_files_inline = 10, -- 1 <= 10 → inline
-      small_file_batch_chars = 4000,
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        small_file_chars = 10000, -- file is "small"
+        max_small_files_inline = 10, -- 1 <= 10 → inline
+        small_file_batch_chars = 4000,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
     local err, payload
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function(e, p)
+      err = e
+      payload = p
+    end)
 
     restore()
 
@@ -1009,19 +1145,25 @@ describe("prepare() integration", function()
     local diff_data = { diff = big_diff, files = { "big.lua" } }
 
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always",
-      small_file_chars = 1,
-      chunk_chars = 10,           -- tiny → many chunks
-      max_chunks_per_file = 2,    -- overflow at >2
-      max_small_files_inline = 10,
-      small_file_batch_chars = 4000,
-      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        small_file_chars = 1,
+        chunk_chars = 10, -- tiny → many chunks
+        max_chunks_per_file = 2, -- overflow at >2
+        max_small_files_inline = 10,
+        small_file_batch_chars = 4000,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
     local err, payload
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function(e, p) err = e; payload = p end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function(e, p)
+      err = e
+      payload = p
+    end)
 
     restore()
 
@@ -1036,10 +1178,14 @@ describe("prepare() integration", function()
     local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")
     local status_calls = {}
     local picker = require("aicommits.ui.picker")
-    local orig_show  = picker.show_status
+    local orig_show = picker.show_status
     local orig_close = picker.close_status
-    picker.show_status  = function(msg) table.insert(status_calls, { kind = "show", msg = msg }) end
-    picker.close_status = function()    table.insert(status_calls, { kind = "close" }) end
+    picker.show_status = function(msg)
+      table.insert(status_calls, { kind = "show", msg = msg })
+    end
+    picker.close_status = function()
+      table.insert(status_calls, { kind = "close" })
+    end
 
     local provider = make_mock_provider("- summary")
     local big_diff = "diff --git a/big.lua b/big.lua\n@@ -1,5 +1,6 @@\n line1\n+line2"
@@ -1047,18 +1193,25 @@ describe("prepare() integration", function()
     local diff_data = { diff = big_diff, files = { "big.lua" } }
 
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always", threshold_chars = 0,
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      small_file_chars = 50,
-      max_small_files_inline = 10, small_file_batch_chars = 4000,
-      summary_model = nil, summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        threshold_chars = 0,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        small_file_chars = 50,
+        max_small_files_inline = 10,
+        small_file_batch_chars = 4000,
+        summary_model = nil,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function() end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function() end)
 
-    picker.show_status  = orig_show
+    picker.show_status = orig_show
     picker.close_status = orig_close
     restore()
 
@@ -1077,10 +1230,14 @@ describe("prepare() integration", function()
     local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")
     local status_calls = {}
     local picker = require("aicommits.ui.picker")
-    local orig_show  = picker.show_status
+    local orig_show = picker.show_status
     local orig_close = picker.close_status
-    picker.show_status  = function(msg) table.insert(status_calls, { kind = "show", msg = msg }) end
-    picker.close_status = function()    table.insert(status_calls, { kind = "close" }) end
+    picker.show_status = function(msg)
+      table.insert(status_calls, { kind = "show", msg = msg })
+    end
+    picker.close_status = function()
+      table.insert(status_calls, { kind = "close" })
+    end
 
     local provider = make_mock_provider("- summary")
     local big_diff = "diff --git a/big.lua b/big.lua\n@@ -1,5 +1,6 @@\n line1\n+line2"
@@ -1088,18 +1245,25 @@ describe("prepare() integration", function()
     local diff_data = { diff = big_diff, files = { "big.lua" } }
 
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always", threshold_chars = 0,
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      small_file_chars = 50,
-      max_small_files_inline = 10, small_file_batch_chars = 4000,
-      summary_model = nil, summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        threshold_chars = 0,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        small_file_chars = 50,
+        max_small_files_inline = 10,
+        small_file_batch_chars = 4000,
+        summary_model = nil,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function() end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function() end)
 
-    picker.show_status  = orig_show
+    picker.show_status = orig_show
     picker.close_status = orig_close
     restore()
 
@@ -1118,10 +1282,14 @@ describe("prepare() integration", function()
     local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")
     local status_calls = {}
     local picker = require("aicommits.ui.picker")
-    local orig_show  = picker.show_status
+    local orig_show = picker.show_status
     local orig_close = picker.close_status
-    picker.show_status  = function(msg) table.insert(status_calls, { kind = "show", msg = msg }) end
-    picker.close_status = function()    table.insert(status_calls, { kind = "close" }) end
+    picker.show_status = function(msg)
+      table.insert(status_calls, { kind = "show", msg = msg })
+    end
+    picker.close_status = function()
+      table.insert(status_calls, { kind = "close" })
+    end
 
     local provider = make_mock_provider("- summary")
     local big_diff = "diff --git a/big.lua b/big.lua\n@@ -1,5 +1,6 @@\n line1\n+line2"
@@ -1129,18 +1297,25 @@ describe("prepare() integration", function()
     local diff_data = { diff = big_diff, files = { "big.lua" } }
 
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always", threshold_chars = 0,
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      small_file_chars = 50,
-      max_small_files_inline = 10, small_file_batch_chars = 4000,
-      summary_model = nil, summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        threshold_chars = 0,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        small_file_chars = 50,
+        max_small_files_inline = 10,
+        small_file_batch_chars = 4000,
+        summary_model = nil,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function() end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function() end)
 
-    picker.show_status  = orig_show
+    picker.show_status = orig_show
     picker.close_status = orig_close
     restore()
 
@@ -1159,10 +1334,12 @@ describe("prepare() integration", function()
     local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")
     local events = {}
     local picker = require("aicommits.ui.picker")
-    local orig_show  = picker.show_status
+    local orig_show = picker.show_status
     local orig_close = picker.close_status
-    picker.show_status  = function(_msg) end
-    picker.close_status = function() table.insert(events, "close") end
+    picker.show_status = function(_msg) end
+    picker.close_status = function()
+      table.insert(events, "close")
+    end
 
     local provider = make_mock_provider("- summary")
     local big_diff = "diff --git a/big.lua b/big.lua\n@@ -1,5 +1,6 @@\n line1\n+line2"
@@ -1170,24 +1347,31 @@ describe("prepare() integration", function()
     local diff_data = { diff = big_diff, files = { "big.lua" } }
 
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always", threshold_chars = 0,
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      small_file_chars = 50,
-      max_small_files_inline = 10, small_file_batch_chars = 4000,
-      summary_model = nil, summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        threshold_chars = 0,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        small_file_chars = 50,
+        max_small_files_inline = 10,
+        small_file_batch_chars = 4000,
+        summary_model = nil,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
     local cb_index_at_close = nil
     local cb_called_index = 0
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function(_e, _p)
-        cb_called_index = cb_called_index + 1
-        -- Record how many close events have fired by the time callback runs
-        cb_index_at_close = #events
-      end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function(_e, _p)
+      cb_called_index = cb_called_index + 1
+      -- Record how many close events have fired by the time callback runs
+      cb_index_at_close = #events
+    end)
 
-    picker.show_status  = orig_show
+    picker.show_status = orig_show
     picker.close_status = orig_close
     restore()
 
@@ -1200,31 +1384,38 @@ describe("prepare() integration", function()
     local restore = stub_stat(" big.lua | 5 +++\n")
     local close_count = 0
     local picker = require("aicommits.ui.picker")
-    local orig_show  = picker.show_status
+    local orig_show = picker.show_status
     local orig_close = picker.close_status
-    picker.show_status  = function(_msg) end
-    picker.close_status = function() close_count = close_count + 1 end
+    picker.show_status = function(_msg) end
+    picker.close_status = function()
+      close_count = close_count + 1
+    end
 
     local provider = make_mock_provider("ERR:api down")
-    local big_diff = "diff --git a/big.lua b/big.lua\n@@ -1,3 +1,4 @@\n a\n+b"
-      .. string.rep("\nx", 60)
+    local big_diff = "diff --git a/big.lua b/big.lua\n@@ -1,3 +1,4 @@\n a\n+b" .. string.rep("\nx", 60)
     local diff_data = { diff = big_diff, files = { "big.lua" } }
 
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always", small_file_chars = 50,
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      max_small_files_inline = 10, small_file_batch_chars = 4000,
-      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        small_file_chars = 50,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        max_small_files_inline = 10,
+        small_file_batch_chars = 4000,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
     local close_before_cb = nil
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function(_e, _p)
-        close_before_cb = close_count
-      end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function(_e, _p)
+      close_before_cb = close_count
+    end)
 
-    picker.show_status  = orig_show
+    picker.show_status = orig_show
     picker.close_status = orig_close
     restore()
 
@@ -1236,39 +1427,48 @@ describe("prepare() integration", function()
     local restore = stub_stat(" a.lua | 1\n")
     local status_calls = {}
     local picker = require("aicommits.ui.picker")
-    local orig_show  = picker.show_status
+    local orig_show = picker.show_status
     local orig_close = picker.close_status
-    picker.show_status  = function(msg) table.insert(status_calls, { kind = "show", msg = msg }) end
-    picker.close_status = function()    table.insert(status_calls, { kind = "close" }) end
+    picker.show_status = function(msg)
+      table.insert(status_calls, { kind = "show", msg = msg })
+    end
+    picker.close_status = function()
+      table.insert(status_calls, { kind = "close" })
+    end
 
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb) cb(nil, "summary") end,
+      summarize = function(self, _text, _opts, _cfg, cb)
+        cb(nil, "summary")
+      end,
     }
 
     local diff = "diff --git a/a.lua b/a.lua\n@@ -1 +1 @@\n-old\n+new"
     local diff_data = { diff = diff, files = { "a.lua" } }
 
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always",
-      small_file_chars = 10000,
-      max_small_files_inline = 10,
-      small_file_batch_chars = 4000,
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        small_file_chars = 10000,
+        max_small_files_inline = 10,
+        small_file_batch_chars = 4000,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, {}, function() end)
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function() end)
 
-    picker.show_status  = orig_show
+    picker.show_status = orig_show
     picker.close_status = orig_close
     restore()
 
     for _, call in ipairs(status_calls) do
       if call.kind == "show" then
-        assert.is_falsy(call.msg:match("^Summarizing"),
-          "Unexpected 'Summarizing' message: " .. call.msg)
+        assert.is_falsy(call.msg:match("^Summarizing"), "Unexpected 'Summarizing' message: " .. call.msg)
       end
     end
   end)
@@ -1289,18 +1489,25 @@ describe("prepare() integration", function()
     local diff_data = { diff = big_diff, files = { "big.lua" } }
 
     local config = require("aicommits.config")
-    config.setup({ large_diff = {
-      mode = "always", threshold_chars = 0,
-      chunk_chars = 6000, max_chunks_per_file = 6,
-      small_file_chars = 50,
-      max_small_files_inline = 10, small_file_batch_chars = 4000,
-      summary_model = nil, summary_max_tokens = 220, summary_temperature = 0.2, concurrency = 4,
-    }})
+    config.setup({
+      large_diff = {
+        mode = "always",
+        threshold_chars = 0,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        small_file_chars = 50,
+        max_small_files_inline = 10,
+        small_file_batch_chars = 4000,
+        summary_model = nil,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
 
     local provider_config = { api_key = "my-secret-key", model = "gpt-4.1-nano" }
 
-    require("aicommits.input.rich").prepare(
-      diff_data, provider, provider_config, function() end)
+    require("aicommits.input.rich").prepare(diff_data, provider, provider_config, function() end)
 
     restore()
 

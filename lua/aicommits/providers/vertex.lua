@@ -204,23 +204,28 @@ end
 -- @param callback       function(error, summary_text)
 function M:summarize(text, opts, provider_config, callback)
   generate_token(function(err, token)
-    if err then callback(err, nil); return end
+    if err then
+      callback(err, nil)
+      return
+    end
 
-    local model       = opts.model or provider_config.model or "gemini-2.0-flash-lite"
-    local project     = provider_config.project
-    local location    = provider_config.location or "us-central1"
-    local max_tokens  = opts.max_tokens or 220
+    local model = opts.model or provider_config.model or "gemini-2.0-flash-lite"
+    local project = provider_config.project
+    local location = provider_config.location or "us-central1"
+    local max_tokens = opts.max_tokens or 220
     local temperature = opts.temperature or 0.2
 
-    local prompt = require("aicommits.prompts").build_summary_prompt(
-      opts.prompt_kind, text, { file_path = opts.file_path })
+    local prompt =
+      require("aicommits.prompts").build_summary_prompt(opts.prompt_kind, text, { file_path = opts.file_path })
 
-    local host = location == "global"
-      and "aiplatform.googleapis.com"
-      or  location .. "-aiplatform.googleapis.com"
+    local host = location == "global" and "aiplatform.googleapis.com" or location .. "-aiplatform.googleapis.com"
     local endpoint = string.format(
       "https://%s/v1/projects/%s/locations/%s/publishers/google/models/%s:generateContent",
-      host, project, location, model)
+      host,
+      project,
+      location,
+      model
+    )
 
     local request_body = {
       contents = {
@@ -232,7 +237,10 @@ function M:summarize(text, opts, provider_config, callback)
     local headers = { Authorization = "Bearer " .. token, ["Content-Type"] = "application/json" }
 
     http.post(endpoint, headers, vim.json.encode(request_body), function(http_err, response_body)
-      if http_err then callback(http_err, nil); return end
+      if http_err then
+        callback(http_err, nil)
+        return
+      end
       local ok, response = pcall(vim.json.decode, response_body)
       if not ok then
         callback("Failed to parse Vertex summarize response: " .. tostring(response), nil)
@@ -243,7 +251,10 @@ function M:summarize(text, opts, provider_config, callback)
         return
       end
       local text_out = vim.tbl_get(response, "candidates", 1, "content", "parts", 1, "text") or ""
-      if text_out == "" then callback("Vertex returned empty summary", nil); return end
+      if text_out == "" then
+        callback("Vertex returned empty summary", nil)
+        return
+      end
       callback(nil, text_out)
     end)
   end)

@@ -174,7 +174,7 @@ describe("aicommits.git", function()
 
       local result_err, result_stat
       require("aicommits.git").get_staged_stat(function(err, stat)
-        result_err  = err
+        result_err = err
         result_stat = stat
       end)
 

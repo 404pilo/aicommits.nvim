@@ -88,32 +88,26 @@ function M.generate_and_commit()
 
         -- Step 5: Show user selection UI (status window auto-closes)
         local ui_opts = { commitlint_detected = provider_config.commitlint_resolved == true }
-        ui.show_commit_prompt(
-          messages,
-          function(selected_message)
-            picker.show_status("Creating commit...")
+        ui.show_commit_prompt(messages, function(selected_message)
+          picker.show_status("Creating commit...")
 
-            git.create_commit(selected_message, function(err)
-              if err then
-                picker.close_status()
-                utils.notify_error(err)
-                return
-              end
+          git.create_commit(selected_message, function(err)
+            if err then
+              picker.close_status()
+              utils.notify_error(err)
+              return
+            end
 
-              picker.show_status("Successfully committed!")
-              git.refresh_git_clients()
+            picker.show_status("Successfully committed!")
+            git.refresh_git_clients()
 
-              vim.defer_fn(function()
-                picker.close_status()
-              end, 1500)
-            end)
-          end,
-          function()
-          end,
-          ui_opts
-        )
-      end)  -- generate_commit_message
-    end)    -- input.prepare
+            vim.defer_fn(function()
+              picker.close_status()
+            end, 1500)
+          end)
+        end, function() end, ui_opts)
+      end) -- generate_commit_message
+    end) -- input.prepare
   end)
 end
 
