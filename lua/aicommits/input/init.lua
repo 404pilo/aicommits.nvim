@@ -16,14 +16,15 @@ end
 -- @param callback       function(error, final_payload)
 function M.prepare(diff_data, provider, provider_config, callback)
   local config = require("aicommits.config")
+  local MODES  = config.LARGE_DIFF_MODES
   local ld     = config.get("large_diff")
-  local mode   = ld and ld.mode or "off"
+  local mode   = ld and ld.mode or MODES.OFF
 
   local use_rich = false
 
-  if mode == "always" then
+  if mode == MODES.ALWAYS then
     use_rich = true
-  elseif mode == "auto" then
+  elseif mode == MODES.AUTO then
     local threshold = ld.threshold_chars or 12000
     use_rich = #(diff_data.diff or "") > threshold
   end

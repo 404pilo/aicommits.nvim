@@ -147,7 +147,7 @@ describe("aicommits.git", function()
 
   describe("get_staged_stat()", function()
     -- vim.v is a read-only Neovim proxy; replace it with a plain table so tests
-    -- can write shell_error without errors. [inferred]
+    -- can write shell_error without errors.
     local orig_vim_v
 
     before_each(function()

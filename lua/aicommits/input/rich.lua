@@ -15,11 +15,10 @@ function M.split_diff_by_file(diff)
   local function flush()
     if current_path then
       local file_diff = table.concat(current_lines, "\n")
-      local is_binary = file_diff:match("Binary files") ~= nil  -- no ^ anchor: first line is 'diff --git' header
-      -- No @@ hunk means there is no content to summarize (pure rename, mode-only
-      -- change, or empty file add); flag it so bucket_files routes it to stat_only.
-      -- The diff always starts with the 'diff --git' header, so a hunk header is
-      -- always preceded by a newline. [FINDING-002]
+      local is_binary = file_diff:match("Binary files") ~= nil
+      -- No @@ hunk means nothing to summarize (pure rename, mode-only change, or
+      -- empty file add); route to stat_only. Match "\n@@" because the header line
+      -- precedes any hunk.
       local is_empty = (not is_binary) and (file_diff:match("\n@@") == nil)
       table.insert(entries, {
         path = current_path, diff = file_diff, is_binary = is_binary, is_empty = is_empty,
@@ -274,9 +273,8 @@ function M.prepare(diff_data, provider, provider_config, callback)
     local buckets      = M.bucket_files(file_entries, ld_cfg)
 
     local sched = M.make_scheduler(ld_cfg.concurrency)
-    -- A separate uncapped scheduler (concurrency = math.huge) is used for per-chunk calls
-    -- within a large-file task so that inner chunk tasks never block waiting for outer task
-    -- slots — which would deadlock when ld_cfg.concurrency is 1. [inferred]
+    -- Chunk scheduler is uncapped so inner chunk tasks never wait for outer slots;
+    -- otherwise concurrency=1 deadlocks (outer task blocks itself).
     local chunk_sched = M.make_scheduler(math.huge)
 
     -- Track results
@@ -305,9 +303,8 @@ function M.prepare(diff_data, provider, provider_config, callback)
 
     local function check_done()
       if done_tasks == total_tasks then
-        -- Partial-failure semantics: if ≥1 summary succeeded, assemble a mixed payload
-        -- where failed files appear as stat-only entries (already set on each failure path).
-        -- Only abort when zero summaries succeeded out of those attempted. [inferred]
+        -- Partial-failure: failed entries are already marked stat-only on each error
+        -- path. Abort only when every attempted summary failed.
         if summary_attempts > 0 and summary_successes == 0 then
           picker.close_status()  -- close status before surfacing the all-failed error
           callback("All summary calls failed (0/" .. summary_attempts .. " succeeded); aborting rich input pipeline.", nil)
@@ -341,7 +338,8 @@ function M.prepare(diff_data, provider, provider_config, callback)
       local local_entry = entry
 
       sched.run(function(task_done)
-        -- Guard against double-completion from nested chunk/rollup paths. [inferred]
+        -- Guard against double-completion from the chunk-error short-circuit and
+        -- the natural rollup path both reaching complete_task().
         local task_completed = false
         local function complete_task()
           if task_completed then return end
@@ -353,10 +351,8 @@ function M.prepare(diff_data, provider, provider_config, callback)
 
         local chunks = M.split_into_chunks(local_entry.diff, ld_cfg.chunk_chars)
 
-        -- Overflow check: when a file exceeds max_chunks_per_file it is demoted to
-        -- stat-only and complete_task() is called immediately WITHOUT incrementing
-        -- summary_attempts, so overflow files never count toward the all-failed
-        -- threshold in check_done(). [inferred]
+        -- Overflow: demote to stat-only WITHOUT incrementing summary_attempts so
+        -- this file doesn't count toward the all-failed threshold.
         if #chunks > ld_cfg.max_chunks_per_file then
           large_results[entry_idx] = {
             path = local_entry.path, is_stat = true,
@@ -386,7 +382,7 @@ function M.prepare(diff_data, provider, provider_config, callback)
 
         for c_idx, chunk in ipairs(chunks) do
           local c_idx_local = c_idx
-          chunk_sched.run(function(chunk_done)  -- uses inner uncapped scheduler to avoid deadlock [inferred]
+          chunk_sched.run(function(chunk_done)
             if chunk_err_flag then
               chunks_done = chunks_done + 1
               chunk_done()

@@ -62,8 +62,7 @@ describe("input.rich — parsing helpers", function()
       assert.is_true(result[1].is_binary)
     end)
 
-    -- FINDING-002: real-path regression — pure rename has no @@ hunk
-    it("flags a pure rename as is_empty [FINDING-002]", function()
+    it("flags a pure rename as is_empty", function()
       local diff = table.concat({
         "diff --git a/legacy_payments.py b/payments_gateway.py",
         "similarity index 100%",
@@ -77,8 +76,7 @@ describe("input.rich — parsing helpers", function()
       assert.is_false(result[1].is_binary)
     end)
 
-    -- FINDING-002: real-path regression — empty new file has no @@ hunk
-    it("flags an empty new file as is_empty [FINDING-002]", function()
+    it("flags an empty new file as is_empty", function()
       local diff = table.concat({
         "diff --git a/src/payments/__init__.py b/src/payments/__init__.py",
         "new file mode 100644",
@@ -90,8 +88,7 @@ describe("input.rich — parsing helpers", function()
       assert.is_false(result[1].is_binary)
     end)
 
-    -- FINDING-002: a normal edit with @@ hunks must NOT be flagged as is_empty
-    it("does not flag a normal edit (with @@ hunk) as is_empty [FINDING-002]", function()
+    it("does not flag a normal edit (with @@ hunk) as is_empty", function()
       local diff = table.concat({
         "diff --git a/foo.lua b/foo.lua",
         "index 1111111..2222222 100644",
@@ -200,10 +197,7 @@ describe("input.rich — parsing helpers", function()
       assert.equals(0, #buckets.small_batched)
     end)
 
-    -- FINDING-002: end-to-end real-path regression
-    -- Entries produced by split_diff_by_file for rename and empty-file diffs must
-    -- land in stat_only (not small_inline) via the is_empty flag. [FINDING-002]
-    it("routes real split_diff_by_file entries for rename and empty-file to stat_only [FINDING-002]", function()
+    it("routes real split_diff_by_file entries for rename and empty-file to stat_only", function()
       local rename_diff = table.concat({
         "diff --git a/legacy_payments.py b/payments_gateway.py",
         "similarity index 100%",
@@ -234,7 +228,7 @@ describe("make_scheduler()", function()
 
   before_each(function()
     rich = require("aicommits.input.rich")
-    -- vim.schedule is not available in busted; stub it to fire synchronously. [inferred]
+    -- vim.schedule is not available in busted; stub it to fire synchronously.
     orig_vim_schedule = vim.schedule
     vim.schedule = function(fn) fn() end
   end)
@@ -325,13 +319,13 @@ describe("prepare() integration", function()
 
   before_each(function()
     rich = require("aicommits.input.rich")
-    -- rich.lua calls picker.show_status; stub it to prevent UI errors in tests. [inferred]
+    -- rich.lua calls picker.show_status; stub it to prevent UI errors in tests.
     local picker = require("aicommits.ui.picker")
     orig_picker_show  = picker.show_status
     orig_picker_close = picker.close_status
     picker.show_status  = function() end
     picker.close_status = function() end
-    -- make_scheduler uses vim.schedule; stub it to run synchronously [inferred]
+    -- make_scheduler uses vim.schedule; stub it to run synchronously.
     orig_vim_schedule = vim.schedule
     vim.schedule = function(fn) fn() end
   end)

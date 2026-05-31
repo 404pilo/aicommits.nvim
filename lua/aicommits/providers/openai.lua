@@ -168,12 +168,7 @@ function M:summarize(text, opts, provider_config, callback)
       callback("OpenAI Error: " .. (response.error.message or vim.inspect(response.error)), nil)
       return
     end
-    local text_out = (
-      response.choices
-      and response.choices[1]
-      and response.choices[1].message
-      and response.choices[1].message.content
-    ) or ""
+    local text_out = vim.tbl_get(response, "choices", 1, "message", "content") or ""
     if text_out == "" then callback("OpenAI returned empty summary", nil); return end
     callback(nil, text_out)
   end)

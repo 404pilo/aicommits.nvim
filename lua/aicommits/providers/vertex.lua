@@ -242,14 +242,7 @@ function M:summarize(text, opts, provider_config, callback)
         callback("Vertex AI Error: " .. (response.error.message or vim.inspect(response.error)), nil)
         return
       end
-      local text_out = (
-        response.candidates
-        and response.candidates[1]
-        and response.candidates[1].content
-        and response.candidates[1].content.parts
-        and response.candidates[1].content.parts[1]
-        and response.candidates[1].content.parts[1].text
-      ) or ""
+      local text_out = vim.tbl_get(response, "candidates", 1, "content", "parts", 1, "text") or ""
       if text_out == "" then callback("Vertex returned empty summary", nil); return end
       callback(nil, text_out)
     end)

@@ -1,6 +1,13 @@
 -- Configuration management for aicommits.nvim
 local M = {}
 
+-- Large-diff mode constants
+M.LARGE_DIFF_MODES = {
+  OFF    = "off",
+  AUTO   = "auto",
+  ALWAYS = "always",
+}
+
 -- Current configuration state
 local config = {}
 
@@ -163,7 +170,11 @@ function M.validate()
   end
 
   if config.large_diff then
-    local valid_modes = { off = true, auto = true, always = true }
+    local valid_modes = {
+      [M.LARGE_DIFF_MODES.OFF]    = true,
+      [M.LARGE_DIFF_MODES.AUTO]   = true,
+      [M.LARGE_DIFF_MODES.ALWAYS] = true,
+    }
     local mode = config.large_diff.mode
     if mode and not valid_modes[mode] then
       table.insert(errors, string.format(
@@ -172,7 +183,7 @@ function M.validate()
     local concurrency = config.large_diff.concurrency
     if concurrency ~= nil and (type(concurrency) ~= "number" or concurrency < 1 or concurrency % 1 ~= 0) then
       table.insert(errors, string.format(
-        "large_diff.concurrency must be a positive integer; got '%s'", tostring(concurrency)))
+        "large_diff.concurrency must be a positive integer; got '%s'", concurrency))
     end
   end
 

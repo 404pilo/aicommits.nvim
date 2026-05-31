@@ -16,6 +16,7 @@ local state = {
 local status_state = {
   buf = nil,
   win = nil,
+  last_message = nil,
 }
 
 -- Clean up picker state and close window
@@ -183,6 +184,7 @@ local function close_status()
   end
   status_state.buf = nil
   status_state.win = nil
+  status_state.last_message = nil
 end
 
 -- Show the picker with commit messages
@@ -265,8 +267,11 @@ function M.show(messages, opts, callbacks)
   -- Set initial cursor position
   update_cursor()
 
-  -- Auto-close on buffer leave
+  -- Auto-close on buffer leave. Use an augroup with clear=true so reopening the
+  -- picker within a session doesn't accumulate anonymous autocmds.
+  local group = vim.api.nvim_create_augroup("aicommits_picker", { clear = true })
   vim.api.nvim_create_autocmd("BufLeave", {
+    group = group,
     buffer = state.buf,
     once = true,
     callback = function()
@@ -285,6 +290,18 @@ end
 -- in place to avoid the close→recreate flicker on phase transitions.
 -- @param message string The status message to display
 function M.show_status(message)
+  local window_valid = status_state.win
+    and vim.api.nvim_win_is_valid(status_state.win)
+    and status_state.buf
+    and vim.api.nvim_buf_is_valid(status_state.buf)
+
+  -- Skip repeated renders of the same message — pipeline callers fire
+  -- show_status("Composing...") once per rollup which would otherwise rewrite
+  -- the buffer N times.
+  if window_valid and status_state.last_message == message then
+    return
+  end
+
   -- Prepare content with padding (shared between update and create paths)
   local lines = {
     "", -- Top padding
@@ -293,15 +310,11 @@ function M.show_status(message)
   }
 
   -- If the status window is already open and valid, update in place
-  if
-    status_state.win
-    and vim.api.nvim_win_is_valid(status_state.win)
-    and status_state.buf
-    and vim.api.nvim_buf_is_valid(status_state.buf)
-  then
+  if window_valid then
     vim.api.nvim_buf_set_option(status_state.buf, "modifiable", true)
     vim.api.nvim_buf_set_lines(status_state.buf, 0, -1, false, lines)
     vim.api.nvim_buf_set_option(status_state.buf, "modifiable", false)
+    status_state.last_message = message
     return
   end
 
@@ -336,6 +349,8 @@ function M.show_status(message)
     "winhighlight",
     "Normal:TelescopeNormal,FloatBorder:TelescopePromptBorder"
   )
+
+  status_state.last_message = message
 end
 
 -- Close status window (expose for external use)
