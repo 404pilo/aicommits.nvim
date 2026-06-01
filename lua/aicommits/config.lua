@@ -183,6 +183,16 @@ function M.validate()
     if concurrency ~= nil and (type(concurrency) ~= "number" or concurrency < 1 or concurrency % 1 ~= 0) then
       table.insert(errors, string.format("large_diff.concurrency must be a positive integer; got '%s'", concurrency))
     end
+    local max_chunks_per_file = config.large_diff.max_chunks_per_file
+    if
+      max_chunks_per_file ~= nil
+      and (type(max_chunks_per_file) ~= "number" or max_chunks_per_file < 1 or max_chunks_per_file % 1 ~= 0)
+    then
+      table.insert(
+        errors,
+        string.format("large_diff.max_chunks_per_file must be a positive integer; got '%s'", max_chunks_per_file)
+      )
+    end
   end
 
   return #errors == 0, errors

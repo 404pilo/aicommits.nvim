@@ -135,6 +135,82 @@ describe("input.rich — parsing helpers", function()
       assert.equals(1, #chunks)
       assert.is_truthy(chunks[1]:match("@@ %-1,200"))
     end)
+
+    it("replays the file header at the start of every emitted chunk", function()
+      local header = table.concat({
+        "diff --git a/big.lua b/big.lua",
+        "index 1111111..2222222 100644",
+        "--- a/big.lua",
+        "+++ b/big.lua",
+      }, "\n")
+
+      local h1 = make_hunk(4)
+      local h2 = make_hunk(4)
+      local h3 = make_hunk(4)
+      local file_diff = header .. "\n" .. table.concat({ h1, h2, h3 }, "\n")
+      local chunk_chars = #header + 1 + #h1
+
+      local chunks = rich.split_into_chunks(file_diff, chunk_chars)
+      assert.is_true(#chunks >= 3)
+      for _, chunk in ipairs(chunks) do
+        assert.is_truthy(chunk:match("^diff %-%-git a/big%.lua b/big%.lua"))
+        assert.is_truthy(chunk:match("\n@@ "))
+      end
+    end)
+  end)
+
+  describe("chunk_file_capped()", function()
+    local function make_headered_diff(path, hunks)
+      return table.concat({
+        "diff --git a/" .. path .. " b/" .. path,
+        "index 1111111..2222222 100644",
+        "--- a/" .. path,
+        "+++ b/" .. path,
+        table.concat(hunks, "\n"),
+      }, "\n")
+    end
+
+    it("grows chunk_chars when initial chunking exceeds cap", function()
+      local hunks = {
+        "@@ -1,30 +1,30 @@\n" .. string.rep("-old-long-line\n", 30) .. string.rep("+new-long-line\n", 30),
+        "@@ -2,1 +2,1 @@\n-old2\n+new2",
+        "@@ -3,1 +3,1 @@\n-old3\n+new3",
+        "@@ -4,1 +4,1 @@\n-old4\n+new4",
+      }
+      local diff = make_headered_diff("grow.lua", hunks)
+      local max_chunks = 3
+      local grown = math.ceil(#diff / max_chunks)
+
+      local base_chunks = rich.split_into_chunks(diff, 10)
+      local chunks = rich.chunk_file_capped(diff, 10, max_chunks)
+      local grown_chunks = rich.split_into_chunks(diff, grown)
+
+      assert.is_true(#base_chunks > max_chunks)
+      assert.is_true(#chunks <= max_chunks)
+      assert.is_true(#grown_chunks <= max_chunks)
+      assert.equals(#grown_chunks, #chunks)
+    end)
+
+    it("can still exceed cap after growth (hard-ceiling fallback case)", function()
+      local max_chunks = 2
+      local hunks = {}
+      for i = 1, max_chunks + 1 do
+        hunks[#hunks + 1] = "@@ -"
+          .. i
+          .. ",20 +"
+          .. i
+          .. ",20 @@\n"
+          .. string.rep("-old-line\n", 20)
+          .. string.rep("+new-line\n", 20)
+      end
+      local diff = make_headered_diff("still-over.lua", hunks)
+      local grown = math.ceil(#diff / max_chunks)
+      local chunks = rich.chunk_file_capped(diff, 10, max_chunks)
+
+      assert.equals(grown, math.ceil(#diff / max_chunks))
+      assert.equals(max_chunks + 1, #chunks)
+      assert.is_true(#chunks > max_chunks)
+    end)
   end)
 
   -- ── bucket_files ─────────────────────────────────────────────────────
@@ -493,8 +569,7 @@ describe("prepare() integration", function()
 
   -- ── GAP scenarios ────────────────────────────────────────────────────
 
-  -- GAP: overflow-max-chunks-exceeded-stat-only
-  it("demotes file to stat-only when chunk count exceeds max_chunks_per_file", function()
+  it("summarizes a large file that exceeds base cap but fits after growth", function()
     local restore = stub_stat(" big.lua | 50 +++\n 1 file changed\n")
     local summarize_calls = 0
     local provider = {
@@ -504,14 +579,18 @@ describe("prepare() integration", function()
       end,
     }
 
-    -- Build a diff with many hunks (one per line group) so it generates > max_chunks_per_file chunks
-    -- chunk_chars = 10 forces each hunk into its own chunk; max_chunks_per_file = 2
-    local hunk_lines = {}
-    for i = 1, 5 do
-      table.insert(hunk_lines, "@@ -" .. i .. ",1 +" .. i .. ",1 @@\n-old" .. i .. "\n+new" .. i)
-    end
-    local big_diff = "diff --git a/big.lua b/big.lua\n" .. table.concat(hunk_lines, "\n")
+    local hunks = {
+      "@@ -1,30 +1,30 @@\n" .. string.rep("-old-long-line\n", 30) .. string.rep("+new-long-line\n", 30),
+      "@@ -2,1 +2,1 @@\n-old2\n+new2",
+      "@@ -3,1 +3,1 @@\n-old3\n+new3",
+      "@@ -4,1 +4,1 @@\n-old4\n+new4",
+    }
+    local big_diff = "diff --git a/big.lua b/big.lua\n" .. table.concat(hunks, "\n")
     local diff_data = { diff = big_diff, files = { "big.lua" } }
+    local max_chunks = 3
+    local grown = math.ceil(#big_diff / max_chunks)
+    local pre_chunks = require("aicommits.input.rich").split_into_chunks(big_diff, 10)
+    local grown_chunks = require("aicommits.input.rich").split_into_chunks(big_diff, grown)
 
     local config = require("aicommits.config")
     config.setup({
@@ -519,7 +598,7 @@ describe("prepare() integration", function()
         mode = "always",
         small_file_chars = 1, -- force large bucket
         chunk_chars = 10, -- tiny chunk_chars → many chunks
-        max_chunks_per_file = 2, -- overflow at >2 chunks
+        max_chunks_per_file = max_chunks,
         max_small_files_inline = 10,
         small_file_batch_chars = 4000,
         summary_max_tokens = 220,
@@ -536,12 +615,12 @@ describe("prepare() integration", function()
 
     restore()
 
-    -- No summary calls should be made for overflowed file
-    assert.equals(0, summarize_calls)
-    -- Payload should still be assembled (not an error)
     assert.is_nil(err)
+    assert.is_true(#pre_chunks > max_chunks)
+    assert.is_true(#grown_chunks <= max_chunks)
+    assert.is_true(summarize_calls > 0)
     assert.is_string(payload)
-    assert.is_truthy(payload:match("diff omitted: exceeded max_chunks_per_file"))
+    assert.is_false(payload:match("diff omitted: exceeded max_chunks_per_file") ~= nil)
   end)
 
   -- GAP: small-batch-packing-boundary
@@ -1127,22 +1206,29 @@ describe("prepare() integration", function()
     assert.is_truthy(payload:match("%-old") or payload:match("%+new"))
   end)
 
-  -- GAP: final-payload-stat-only-section
-  it("includes stat-only note '(diff omitted: exceeded max_chunks_per_file)' in payload", function()
-    local restore = stub_stat(" big.lua | 50 +++\n 1 file changed\n")
+  it("demotes only when grown chunking still exceeds max_chunks_per_file", function()
+    local restore = stub_stat(" hard.lua | 90 +++\n 1 file changed\n")
+    local summarize_calls = 0
     local provider = {
       summarize = function(self, _text, _opts, _cfg, cb)
+        summarize_calls = summarize_calls + 1
         cb(nil, "summary")
       end,
     }
 
-    -- Create a diff that exceeds max_chunks_per_file=2 with chunk_chars=10
-    local hunk_lines = {}
-    for i = 1, 5 do
-      table.insert(hunk_lines, "@@ -" .. i .. ",1 +" .. i .. ",1 @@\n-old" .. i .. "\n+new" .. i)
+    local max_chunks = 2
+    local hunks = {}
+    for i = 1, max_chunks + 1 do
+      hunks[#hunks + 1] = "@@ -"
+        .. i
+        .. ",20 +"
+        .. i
+        .. ",20 @@\n"
+        .. string.rep("-old-line\n", 20)
+        .. string.rep("+new-line\n", 20)
     end
-    local big_diff = "diff --git a/big.lua b/big.lua\n" .. table.concat(hunk_lines, "\n")
-    local diff_data = { diff = big_diff, files = { "big.lua" } }
+    local hard_diff = "diff --git a/hard.lua b/hard.lua\n" .. table.concat(hunks, "\n")
+    local diff_data = { diff = hard_diff, files = { "hard.lua" } }
 
     local config = require("aicommits.config")
     config.setup({
@@ -1150,7 +1236,7 @@ describe("prepare() integration", function()
         mode = "always",
         small_file_chars = 1,
         chunk_chars = 10, -- tiny → many chunks
-        max_chunks_per_file = 2, -- overflow at >2
+        max_chunks_per_file = max_chunks,
         max_small_files_inline = 10,
         small_file_batch_chars = 4000,
         summary_max_tokens = 220,
@@ -1168,8 +1254,9 @@ describe("prepare() integration", function()
     restore()
 
     assert.is_nil(err)
+    assert.equals(0, summarize_calls)
     assert.is_string(payload)
-    assert.is_truthy(payload:match("### big%.lua"))
+    assert.is_truthy(payload:match("### hard%.lua"))
     assert.is_truthy(payload:match("diff omitted: exceeded max_chunks_per_file"))
   end)
 
