@@ -332,6 +332,11 @@ function M.prepare(diff_data, provider, provider_config, callback)
     local large_results = {} -- { path, summary?, stat_line?, is_stat }
     local batch_results = {} -- { paths, summary?, is_stat }
 
+    -- Counter for the "Composing file summaries N/M" status. Incremented as each
+    -- large file's task finishes (any outcome), so it always climbs to M/M and
+    -- never stalls below the total even when a file demotes to stat-only.
+    local composed_files = 0
+
     local summary_attempts = 0
     local summary_successes = 0
 
@@ -404,6 +409,8 @@ function M.prepare(diff_data, provider, provider_config, callback)
             return
           end
           task_completed = true
+          composed_files = composed_files + 1
+          picker.show_status(string.format("Composing file summaries %d/%d...", composed_files, #buckets.large))
           done_tasks = done_tasks + 1
           task_done()
           check_done()
@@ -488,8 +495,7 @@ function M.prepare(diff_data, provider, provider_config, callback)
                     return
                   end
 
-                  -- Roll-up
-                  picker.show_status("Composing file summaries...")
+                  -- Roll-up (progress shown via the N/M counter in complete_task)
                   summary_attempts = summary_attempts + 1
                   local combined = table.concat(chunk_summaries, "\n")
                   local rollup_prompt = prompts.build_file_rollup_prompt(local_entry.path, combined)
