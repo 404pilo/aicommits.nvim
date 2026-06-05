@@ -426,11 +426,11 @@ describe("prepare() integration", function()
   local function make_mock_provider(summary_result)
     -- summary_result: string (success) or error string prefixed with "ERR:"
     return {
-      summarize = function(self, text, opts, provider_config, callback)
+      generate_text = function(self, envelope, provider_config, callback)
         if summary_result:sub(1, 4) == "ERR:" then
           callback(summary_result:sub(5), nil)
         else
-          callback(nil, summary_result)
+          callback(nil, { summary_result })
         end
       end,
     }
@@ -573,9 +573,9 @@ describe("prepare() integration", function()
     local restore = stub_stat(" big.lua | 50 +++\n 1 file changed\n")
     local summarize_calls = 0
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         summarize_calls = summarize_calls + 1
-        cb(nil, "summary")
+        cb(nil, { "summary" })
       end,
     }
 
@@ -630,9 +630,9 @@ describe("prepare() integration", function()
 
     local batch_count = 0
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         batch_count = batch_count + 1
-        cb(nil, "- batch summary " .. batch_count)
+        cb(nil, { "- batch summary " .. batch_count })
       end,
     }
 
@@ -678,9 +678,9 @@ describe("prepare() integration", function()
     local restore = stub_stat(" abcdefghij.lua | 1\n klmnopqrst.lua | 1\n")
     local batch_count = 0
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         batch_count = batch_count + 1
-        cb(nil, "- batch summary " .. batch_count)
+        cb(nil, { "- batch summary " .. batch_count })
       end,
     }
 
@@ -723,7 +723,7 @@ describe("prepare() integration", function()
   it("degrades file to stat-only when chunk summary call fails", function()
     local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         cb("chunk error", nil)
       end,
     }
@@ -770,12 +770,12 @@ describe("prepare() integration", function()
     local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")
     local call_num = 0
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         call_num = call_num + 1
         if call_num == 1 then
           cb("chunk error", nil)
         else
-          cb(nil, "- summary " .. call_num)
+          cb(nil, { "- summary " .. call_num })
         end
       end,
     }
@@ -831,12 +831,15 @@ describe("prepare() integration", function()
     local restore = stub_stat(" good.lua | 5\n bad.lua | 5\n")
     local call_num = 0
     local provider = {
-      summarize = function(self, _text, opts, _cfg, cb)
+      generate_text = function(self, envelope, _cfg, cb)
         call_num = call_num + 1
-        if opts and opts.prompt_kind == "file_rollup" and opts.file_path == "bad.lua" then
+        -- Rollup prompts use the "paragraph" system text; chunk prompts the
+        -- "bullet-point" text. The file path is embedded in envelope.user.
+        local is_rollup = envelope.system and envelope.system:match("paragraph") ~= nil
+        if is_rollup and envelope.user and envelope.user:match("bad%.lua") then
           cb("rollup error", nil)
         else
-          cb(nil, "- summary " .. call_num)
+          cb(nil, { "- summary " .. call_num })
         end
       end,
     }
@@ -881,7 +884,7 @@ describe("prepare() integration", function()
   it("degrades batch to stat-only when batch summary call fails", function()
     local restore = stub_stat(" a.lua | 1\n b.lua | 1\n c.lua | 1\n")
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         cb("batch error", nil)
       end,
     }
@@ -925,15 +928,17 @@ describe("prepare() integration", function()
   it("produces mixed payload when some large files fail and one succeeds", function()
     local restore = stub_stat(" a.lua | 5\n b.lua | 5\n c.lua | 5\n")
     local provider = {
-      summarize = function(self, _text, opts, _cfg, cb)
-        local kind = opts and opts.prompt_kind
-        local path = opts and opts.file_path
-        if kind == "chunk" then
+      generate_text = function(self, envelope, _cfg, cb)
+        -- Chunk prompts carry the "bullet-point" system text; rollups the
+        -- "paragraph" text. The file path is embedded in envelope.user.
+        local is_chunk = envelope.system and envelope.system:match("bullet%-point") ~= nil
+        local is_a = envelope.user and envelope.user:match("a%.lua") ~= nil
+        if is_chunk then
           -- All chunk summarizations succeed so each file proceeds to roll-up
-          cb(nil, "- chunk summary")
-        elseif kind == "file_rollup" and path == "a.lua" then
+          cb(nil, { "- chunk summary" })
+        elseif is_a then
           -- Only a.lua's rollup succeeds
-          cb(nil, "- a.lua full summary")
+          cb(nil, { "- a.lua full summary" })
         else
           -- b.lua and c.lua rollups fail
           cb("rollup error", nil)
@@ -985,9 +990,9 @@ describe("prepare() integration", function()
     local restore = stub_stat(" a.lua | 1\n b.lua | 1\n")
     local summarize_calls = 0
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         summarize_calls = summarize_calls + 1
-        cb(nil, "should not happen")
+        cb(nil, { "should not happen" })
       end,
     }
 
@@ -1036,9 +1041,9 @@ describe("prepare() integration", function()
 
     local summarize_calls = 0
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         summarize_calls = summarize_calls + 1
-        cb(nil, "summary")
+        cb(nil, { "summary" })
       end,
     }
 
@@ -1166,9 +1171,9 @@ describe("prepare() integration", function()
     local restore = stub_stat(" small.lua | 2\n 1 file changed\n")
     local summarize_calls = 0
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         summarize_calls = summarize_calls + 1
-        cb(nil, "summary")
+        cb(nil, { "summary" })
       end,
     }
 
@@ -1210,9 +1215,9 @@ describe("prepare() integration", function()
     local restore = stub_stat(" hard.lua | 90 +++\n 1 file changed\n")
     local summarize_calls = 0
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         summarize_calls = summarize_calls + 1
-        cb(nil, "summary")
+        cb(nil, { "summary" })
       end,
     }
 
@@ -1524,8 +1529,8 @@ describe("prepare() integration", function()
     end
 
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
-        cb(nil, "summary")
+      generate_text = function(self, _envelope, _cfg, cb)
+        cb(nil, { "summary" })
       end,
     }
 
@@ -1560,14 +1565,14 @@ describe("prepare() integration", function()
     end
   end)
 
-  -- GAP: provider-summarize-uses-provider-config-auth
-  it("propagates provider_config (including api_key) to provider.summarize calls", function()
+  -- GAP: provider-generate-text-uses-provider-config-auth
+  it("propagates provider_config (including api_key) to provider.generate_text calls", function()
     local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")
     local received_cfg = nil
     local provider = {
-      summarize = function(self, _text, _opts, cfg, cb)
+      generate_text = function(self, _envelope, cfg, cb)
         received_cfg = cfg
-        cb(nil, "- summary")
+        cb(nil, { "- summary" })
       end,
     }
 
@@ -1600,5 +1605,41 @@ describe("prepare() integration", function()
 
     assert.is_not_nil(received_cfg)
     assert.equals("my-secret-key", received_cfg.api_key)
+  end)
+
+  it("builds the summary envelope in rich.lua with n=1 and system/user set", function()
+    local restore = stub_stat("1 file changed")
+
+    local captured_envelope
+    local provider = {
+      generate_text = function(_self, envelope, _cfg, cb)
+        captured_envelope = captured_envelope or envelope
+        cb(nil, { "summary" })
+      end,
+    }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = { mode = "always", small_file_chars = 1 } })
+
+    local rich_mod = require("aicommits.input.rich")
+    local done
+    rich_mod.prepare(
+      { diff = "diff --git a/big.lua b/big.lua\n@@ -1 +1 @@\n-old\n+new\n", files = {} },
+      provider,
+      {},
+      function()
+        done = true
+      end
+    )
+    vim.wait(2000, function()
+      return done == true
+    end)
+
+    restore()
+
+    assert.is_table(captured_envelope)
+    assert.equals(1, captured_envelope.n)
+    assert.is_string(captured_envelope.system)
+    assert.is_string(captured_envelope.user)
   end)
 end)

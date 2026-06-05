@@ -1,6 +1,8 @@
 -- Rich input mode: summarization pipeline for large staged diffs.
 local M = {}
 
+local prompts = require("aicommits.prompts")
+
 -- Split a full git diff into per-file entries.
 -- Each entry: { path = string, diff = string, is_binary = boolean, is_empty = boolean }
 -- @param diff string  Full output of git diff --cached
@@ -298,8 +300,8 @@ end
 
 -- Prepare the final commit-message payload via the summarization pipeline.
 -- @param diff_data      table   { diff = string, files = table }
--- @param provider       table   Provider instance (must implement :summarize())
--- @param provider_config table  Passed as-is to provider:summarize()
+-- @param provider       table   Provider instance (must implement :generate_text())
+-- @param provider_config table  Passed as-is to provider:generate_text()
 -- @param callback       function(error, final_payload)
 function M.prepare(diff_data, provider, provider_config, callback)
   local config = require("aicommits.config")
@@ -321,9 +323,9 @@ function M.prepare(diff_data, provider, provider_config, callback)
     local file_entries = M.split_diff_by_file(diff_data.diff)
     local buckets = M.bucket_files(file_entries, ld_cfg)
 
-    local sched = M.make_scheduler(ld_cfg.concurrency)
-    -- Chunk scheduler is uncapped so inner chunk tasks never wait for outer slots;
-    -- otherwise concurrency=1 deadlocks (outer task blocks itself).
+    -- Concurrency is enforced solely by the request-layer semaphore now, so both
+    -- schedulers are unbounded; the request policy throttles actual HTTP traffic.
+    local sched = M.make_scheduler(math.huge)
     local chunk_sched = M.make_scheduler(math.huge)
 
     -- Track results
@@ -455,21 +457,23 @@ function M.prepare(diff_data, provider, provider_config, callback)
               end
               return
             end
-            provider:summarize(
-              chunk,
+            local chunk_prompt = prompts.build_chunk_summary_prompt(local_entry.path, chunk)
+            provider:generate_text(
               {
-                prompt_kind = "chunk",
-                file_path = local_entry.path,
+                system = chunk_prompt.system,
+                user = chunk_prompt.user,
                 model = ld_cfg.summary_model,
                 max_tokens = ld_cfg.summary_max_tokens,
                 temperature = ld_cfg.summary_temperature,
+                n = 1,
               },
               provider_config,
-              function(err, summary_text)
-                if err then
+              function(err, texts)
+                local summary_text = texts and texts[1] or ""
+                if err or summary_text == "" then
                   chunk_err_flag = true
                 end
-                chunk_summaries[c_idx_local] = summary_text or ""
+                chunk_summaries[c_idx_local] = summary_text
                 chunks_done = chunks_done + 1
                 chunk_done()
 
@@ -488,18 +492,20 @@ function M.prepare(diff_data, provider, provider_config, callback)
                   picker.show_status("Composing file summaries...")
                   summary_attempts = summary_attempts + 1
                   local combined = table.concat(chunk_summaries, "\n")
-                  provider:summarize(
-                    combined,
+                  local rollup_prompt = prompts.build_file_rollup_prompt(local_entry.path, combined)
+                  provider:generate_text(
                     {
-                      prompt_kind = "file_rollup",
-                      file_path = local_entry.path,
+                      system = rollup_prompt.system,
+                      user = rollup_prompt.user,
                       model = ld_cfg.summary_model,
                       max_tokens = ld_cfg.summary_max_tokens,
                       temperature = ld_cfg.summary_temperature,
+                      n = 1,
                     },
                     provider_config,
-                    function(rollup_err, rollup_text)
-                      if rollup_err then
+                    function(rollup_err, rollup_texts)
+                      local rollup_text = rollup_texts and rollup_texts[1] or ""
+                      if rollup_err or rollup_text == "" then
                         large_results[entry_idx] = {
                           path = local_entry.path,
                           is_stat = true,
@@ -538,17 +544,20 @@ function M.prepare(diff_data, provider, provider_config, callback)
         local batch_payload = table.concat(parts, "\n---\n")
 
         summary_attempts = summary_attempts + 1
-        provider:summarize(
-          batch_payload,
+        local batch_prompt = prompts.build_small_batch_prompt(batch_payload)
+        provider:generate_text(
           {
-            prompt_kind = "small_batch",
+            system = batch_prompt.system,
+            user = batch_prompt.user,
             model = ld_cfg.summary_model,
             max_tokens = ld_cfg.summary_max_tokens,
             temperature = ld_cfg.summary_temperature,
+            n = 1,
           },
           provider_config,
-          function(err, summary_text)
-            if err then
+          function(err, texts)
+            local summary_text = texts and texts[1] or ""
+            if err or summary_text == "" then
               batch_results[b_idx_local].is_stat = true
             else
               summary_successes = summary_successes + 1
