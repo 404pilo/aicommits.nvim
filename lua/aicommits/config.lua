@@ -130,7 +130,10 @@ M.defaults = {
 function M.setup(user_opts)
   user_opts = user_opts or {}
 
-  config = vim.tbl_deep_extend("force", M.defaults, user_opts)
+  -- Deep-copy defaults first so post-merge mutations (e.g. the concurrency-alias
+  -- fold below) never corrupt the shared M.defaults table — tbl_deep_extend aliases
+  -- nested default tables that the user did not override.
+  config = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), user_opts)
 
   -- Back-compat: large_diff.concurrency is the legacy knob for what is now
   -- request.max_concurrency. Detect EXPLICIT user intent from user_opts (not the
