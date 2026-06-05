@@ -21,10 +21,13 @@ describe("gemini-api provider", function()
       assert.is_function(gemini.get_auth_headers)
       assert.is_function(gemini.get_capabilities)
     end)
+  end)
 
-    -- GAP: provider-summarize-interface-exists (gemini)
-    it("exposes summarize as a function", function()
-      assert.is_function(gemini.summarize)
+  describe("interface", function()
+    it("implements generate_text and not summarize", function()
+      local g = require("aicommits.providers.gemini")
+      assert.is_function(g.generate_text)
+      assert.is_nil(g.summarize)
     end)
   end)
 
@@ -282,66 +285,67 @@ describe("gemini-api provider", function()
     end)
   end)
 
-  describe("summarize()", function()
-    it("calls callback with summary text", function()
-      -- Stub http.post to return a canned response
-      local http = require("aicommits.http")
-      local orig_post = http.post
-      http.post = function(_url, _headers, _body, cb)
-        cb(
-          nil,
-          vim.json.encode({
+  describe("generate_text()", function()
+    before_each(function()
+      package.loaded["aicommits.providers.gemini"] = nil
+      package.loaded["aicommits.request"] = nil
+      package.loaded["aicommits.http"] = nil
+    end)
+
+    it("maps envelope.n to candidateCount and parses candidates", function()
+      local request = require("aicommits.request")
+      local orig_send = request.send
+      local captured
+      request.send = function(send_opts, cb)
+        captured = send_opts
+        cb(nil, {
+          status = 200,
+          body = vim.json.encode({
             candidates = {
-              {
-                content = {
-                  parts = { { text = "- added helper function foo()" } },
-                },
-              },
+              { content = { parts = { { text = "one" } } } },
+              { content = { parts = { { text = "two" } } } },
             },
-          })
-        )
+          }),
+          headers = {},
+        })
       end
 
-      local provider = require("aicommits.providers.gemini")
-      local err, summary
-      provider:summarize(
-        "diff text",
-        { prompt_kind = "chunk", file_path = "a.lua", max_tokens = 220, temperature = 0.2 },
-        { api_key = "test-key", model = "gemini-2.5-flash" },
-        function(e, s)
-          err = e
-          summary = s
+      local err, texts
+      require("aicommits.providers.gemini"):generate_text(
+        { system = "S", user = "U", model = "gemini-2.5-flash", n = 2, temperature = 0.3, max_tokens = 100 },
+        { api_key = "k", model = "gemini-2.5-flash" },
+        function(e, t)
+          err, texts = e, t
         end
       )
 
       assert.is_nil(err)
-      assert.is_string(summary)
-      assert.is_truthy(summary:match("foo"))
+      assert.same({ "one", "two" }, texts)
+      local body = vim.json.decode(captured.body)
+      assert.equals(2, body.generationConfig.candidateCount)
+      assert.is_truthy(body.contents[1].parts[1].text:match("S"))
+      assert.is_truthy(body.contents[1].parts[1].text:match("U"))
 
-      http.post = orig_post
+      request.send = orig_send
     end)
 
-    it("calls callback with error when API returns error", function()
-      local http = require("aicommits.http")
-      local orig_post = http.post
-      http.post = function(_url, _headers, _body, cb)
-        cb("network error", nil)
+    it("surfaces an API error in the response body", function()
+      local request = require("aicommits.request")
+      local orig_send = request.send
+      request.send = function(_o, cb)
+        cb(nil, { status = 400, body = vim.json.encode({ error = { message = "quota" } }), headers = {} })
       end
-
-      local provider = require("aicommits.providers.gemini")
       local err
-      provider:summarize(
-        "diff text",
-        { prompt_kind = "chunk", file_path = "a.lua", max_tokens = 220, temperature = 0.2 },
-        { api_key = "test-key" },
+      require("aicommits.providers.gemini"):generate_text(
+        { system = "S", user = "U" },
+        { api_key = "k" },
         function(e, _)
           err = e
         end
       )
-
       assert.is_string(err)
-
-      http.post = orig_post
+      assert.is_truthy(err:match("quota"))
+      request.send = orig_send
     end)
   end)
 end)
