@@ -1481,6 +1481,67 @@ describe("prepare() integration", function()
     assert.is_true(saw_full, "expected the counter to reach 2/2")
   end)
 
+  -- counter: summarizing status carries an "N/M" file counter for the per-chunk
+  -- sub-phase (ticks when each file's chunk calls have returned, before roll-up)
+  it("shows a file counter (N/M) in the summarizing status for multiple large files", function()
+    local restore = stub_stat(" a.lua | 10 +++\n b.lua | 10 +++\n 2 files changed\n")
+    local status_msgs = {}
+    local picker = require("aicommits.ui.picker")
+    local orig_show = picker.show_status
+    local orig_close = picker.close_status
+    picker.show_status = function(msg)
+      table.insert(status_msgs, msg)
+    end
+    picker.close_status = function() end
+
+    local provider = make_mock_provider("- summary")
+
+    local function mk_big(name)
+      return "diff --git a/"
+        .. name
+        .. " b/"
+        .. name
+        .. "\n@@ -1,5 +1,6 @@\n line1\n+line2"
+        .. string.rep("\nmore content", 30)
+    end
+    local diff = mk_big("a.lua") .. "\n" .. mk_big("b.lua")
+    local diff_data = { diff = diff, files = { "a.lua", "b.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({
+      large_diff = {
+        mode = "always",
+        threshold_chars = 0,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        small_file_chars = 50,
+        max_small_files_inline = 10,
+        small_file_batch_chars = 4000,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
+
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function() end)
+
+    picker.show_status = orig_show
+    picker.close_status = orig_close
+    restore()
+
+    local saw_counter, saw_full = false, false
+    for _, msg in ipairs(status_msgs) do
+      if type(msg) == "string" and msg:match("^Summarizing %d+ files in parallel %d+/2%.%.%.$") then
+        saw_counter = true
+        if msg == "Summarizing 2 files in parallel 2/2..." then
+          saw_full = true
+        end
+      end
+    end
+    assert.is_true(saw_counter, "expected a 'Summarizing N files in parallel i/2...' counter message")
+    assert.is_true(saw_full, "expected the summarizing counter to reach 2/2")
+  end)
+
   -- GAP: status-ui-close-on-success
   it("calls picker.close_status before the success callback fires", function()
     local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")

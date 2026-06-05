@@ -337,6 +337,17 @@ function M.prepare(diff_data, provider, provider_config, callback)
     -- never stalls below the total even when a file demotes to stat-only.
     local composed_files = 0
 
+    -- Counter for the earlier "Summarizing N files in parallel i/T" sub-phase.
+    -- Ticks once per parallel task (large file or small batch) the moment its
+    -- per-chunk / batch summary calls have all returned — before the large-file
+    -- roll-up that drives the composing counter above. Counts every task outcome
+    -- (including pre-chunk demotions) so it always reaches T/T.
+    local summarized_files = 0
+    local function bump_summarized(total)
+      summarized_files = summarized_files + 1
+      picker.show_status(string.format("Summarizing %d files in parallel %d/%d...", total, summarized_files, total))
+    end
+
     local summary_attempts = 0
     local summary_successes = 0
 
@@ -393,7 +404,7 @@ function M.prepare(diff_data, provider, provider_config, callback)
       return
     end
 
-    picker.show_status(string.format("Summarizing %d files in parallel...", #buckets.large + #batches))
+    picker.show_status(string.format("Summarizing %d files in parallel %d/%d...", total_tasks, 0, total_tasks))
 
     -- ── Large file tasks ─────────────────────────────────────────────
     for idx, entry in ipairs(buckets.large) do
@@ -416,6 +427,18 @@ function M.prepare(diff_data, provider, provider_config, callback)
           check_done()
         end
 
+        -- Tick the earlier "Summarizing i/T" counter exactly once for this file,
+        -- the moment its chunk calls have all returned (or it demotes before any
+        -- chunk runs) — i.e. before the roll-up that drives complete_task.
+        local summarized_marked = false
+        local function mark_summarized()
+          if summarized_marked then
+            return
+          end
+          summarized_marked = true
+          bump_summarized(total_tasks)
+        end
+
         local chunks = M.chunk_file_capped(local_entry.diff, ld_cfg.chunk_chars, ld_cfg.max_chunks_per_file)
 
         -- Overflow after growth: demote to stat-only WITHOUT incrementing
@@ -426,6 +449,7 @@ function M.prepare(diff_data, provider, provider_config, callback)
             is_stat = true,
             stat_line = local_entry.path .. " (diff omitted: exceeded max_chunks_per_file)",
           }
+          mark_summarized()
           complete_task()
           return
         end
@@ -442,6 +466,7 @@ function M.prepare(diff_data, provider, provider_config, callback)
             is_stat = true,
             stat_line = local_entry.path .. " (no hunks)",
           }
+          mark_summarized()
           complete_task()
           return
         end
@@ -460,6 +485,7 @@ function M.prepare(diff_data, provider, provider_config, callback)
                   is_stat = true,
                   stat_line = local_entry.path .. " (summary failed)",
                 }
+                mark_summarized()
                 complete_task()
               end
               return
@@ -485,6 +511,9 @@ function M.prepare(diff_data, provider, provider_config, callback)
                 chunk_done()
 
                 if chunks_done == #chunks then
+                  -- All chunk calls have returned — the summarizing sub-phase is
+                  -- done for this file (whether or not a chunk failed).
+                  mark_summarized()
                   if chunk_err_flag then
                     large_results[entry_idx] = {
                       path = local_entry.path,
@@ -570,6 +599,9 @@ function M.prepare(diff_data, provider, provider_config, callback)
               batch_results[b_idx_local].is_stat = false
               batch_results[b_idx_local].summary = summary_text
             end
+            -- A batch has no roll-up; its single call returning is its summarizing
+            -- sub-phase done. Tick the same "Summarizing i/T" counter.
+            bump_summarized(total_tasks)
             done_tasks = done_tasks + 1
             task_done()
             check_done()
