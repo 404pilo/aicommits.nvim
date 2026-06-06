@@ -1,7 +1,6 @@
 -- Vertex AI provider implementation for aicommits.nvim
 local base = require("aicommits.providers.base")
-local http = require("aicommits.http")
-local prompts = require("aicommits.prompts")
+local request = require("aicommits.request")
 
 -- Create Vertex AI provider instance
 local M = base.new({
@@ -11,6 +10,15 @@ local M = base.new({
 -- Token cache to avoid repeated gcloud calls
 M._cached_token = nil
 M._token_expiry = 0
+
+-- Single-flight guard: when the cache is cold and N generate_text tasks call
+-- generate_token concurrently (the unbounded rich.lua scheduler does exactly
+-- this), only the FIRST caller spawns the gcloud subprocess. The rest enqueue
+-- their callbacks here and are all resolved from that one fetch. Without this,
+-- every task sees M._cached_token == nil and spawns its own
+-- `gcloud auth application-default print-access-token` (thundering herd).
+M._token_inflight = false
+M._token_waiters = {}
 
 -- Check if gcloud CLI is installed
 -- @return boolean true if gcloud is available
@@ -35,6 +43,24 @@ local function generate_token(callback)
       nil
     )
     return
+  end
+
+  -- Single-flight: if a fetch is already running, just wait for it. This is what
+  -- prevents the thundering herd of gcloud subprocesses under the unbounded scheduler.
+  table.insert(M._token_waiters, callback)
+  if M._token_inflight then
+    return
+  end
+  M._token_inflight = true
+
+  -- Drain every queued waiter with the single shared result, then reset the guard.
+  local function resolve(err, token)
+    M._token_inflight = false
+    local waiters = M._token_waiters
+    M._token_waiters = {}
+    for _, cb in ipairs(waiters) do
+      cb(err, token)
+    end
   end
 
   -- Execute gcloud command asynchronously
@@ -63,12 +89,12 @@ local function generate_token(callback)
 
         -- Provide helpful error message
         if error_msg:match("not authenticated") or error_msg:match("credentials") then
-          callback(
+          resolve(
             "gcloud not authenticated. Run one of:\n  gcloud auth application-default login\n  export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json",
             nil
           )
         else
-          callback("Failed to get access token: " .. error_msg, nil)
+          resolve("Failed to get access token: " .. error_msg, nil)
         end
         return
       end
@@ -76,7 +102,7 @@ local function generate_token(callback)
       -- Extract token from stdout
       local token = table.concat(stdout_data, "\n"):gsub("%s+$", "") -- trim whitespace
       if token == "" then
-        callback("Empty token received from gcloud", nil)
+        resolve("Empty token received from gcloud", nil)
         return
       end
 
@@ -84,32 +110,26 @@ local function generate_token(callback)
       M._cached_token = token
       M._token_expiry = os.time() + (55 * 60)
 
-      callback(nil, token)
+      resolve(nil, token)
     end,
   })
 end
 
--- Implementation: Generate commit message(s) using Vertex AI API
--- @param diff string The git diff to generate message for
--- @param config table Provider-specific configuration
--- @param callback function(error, messages) Callback with error or array of messages
-function M:generate_commit_message(diff, config, callback)
-  -- Get access token first
+-- Provider-agnostic transport for Vertex AI (Gemini format).
+-- @param envelope table { system, user, model, max_tokens, temperature, n }
+-- @param config   table Provider configuration
+-- @param callback function(error, texts)
+function M:generate_text(envelope, config, callback)
   generate_token(function(err, token)
     if err then
       callback(err, nil)
       return
     end
 
-    -- Get configuration with defaults
-    local model = config.model or "gemini-2.0-flash-lite"
+    local model = envelope.model or config.model or "gemini-2.0-flash-lite"
     local project = config.project
     local location = config.location or "us-central1"
-    local max_length = config.max_length or 50
-    local temperature = config.temperature or 0.7
-    local max_tokens = config.max_tokens or 200
 
-    -- Build Vertex AI endpoint (global has no region prefix in hostname)
     local host = location == "global" and "aiplatform.googleapis.com" or location .. "-aiplatform.googleapis.com"
     local endpoint = string.format(
       "https://%s/v1/projects/%s/locations/%s/publishers/google/models/%s:generateContent",
@@ -119,143 +139,58 @@ function M:generate_commit_message(diff, config, callback)
       model
     )
 
-    -- Build system prompt and user content
-    local system_prompt = prompts.build_system_prompt(max_length, config.commitlint_config)
-
-    -- Build Vertex AI API request body (Gemini format)
     local request_body = {
       contents = {
-        {
-          role = "user",
-          parts = {
-            {
-              text = system_prompt .. "\n\n" .. diff,
-            },
-          },
-        },
+        { role = "user", parts = { { text = (envelope.system or "") .. "\n\n" .. (envelope.user or "") } } },
       },
       generationConfig = {
-        temperature = temperature,
-        maxOutputTokens = max_tokens,
-        candidateCount = 3, -- Generate 3 commit message options
+        temperature = envelope.temperature,
+        maxOutputTokens = envelope.max_tokens,
+        candidateCount = envelope.n or 1,
       },
     }
 
-    -- Build auth headers
-    local headers = {
-      Authorization = "Bearer " .. token,
-      ["Content-Type"] = "application/json",
-    }
+    local headers = { Authorization = "Bearer " .. token, ["Content-Type"] = "application/json" }
 
-    -- Make API request
-    http.post(endpoint, headers, vim.json.encode(request_body), function(http_err, response_body)
+    request.send({
+      url = endpoint,
+      headers = headers,
+      body = vim.json.encode(request_body),
+      policy = request.resolve_policy(config),
+    }, function(http_err, result)
       if http_err then
         callback(http_err, nil)
         return
       end
 
-      -- Parse JSON response
-      local ok, response = pcall(vim.json.decode, response_body)
+      local ok, response = pcall(vim.json.decode, result.body)
       if not ok then
         callback("Failed to parse Vertex AI API response: " .. tostring(response), nil)
         return
       end
 
-      -- Check for API errors
       if response.error then
-        local error_msg = "Vertex AI API Error: " .. (response.error.message or vim.inspect(response.error))
-        callback(error_msg, nil)
+        callback("Vertex AI API Error: " .. (response.error.message or vim.inspect(response.error)), nil)
         return
       end
 
-      -- Extract messages from response (Vertex AI Gemini format)
       if not response.candidates or #response.candidates == 0 then
         callback("No commit messages were generated. Try again.", nil)
         return
       end
 
-      local messages = {}
+      local texts = {}
       for _, candidate in ipairs(response.candidates) do
         if candidate.content and candidate.content.parts then
           for _, part in ipairs(candidate.content.parts) do
             if part.text and part.text ~= "" then
-              table.insert(messages, part.text)
+              table.insert(texts, part.text)
             end
           end
         end
       end
 
-      -- Process and return messages
-      local processed = prompts.process_messages(messages)
-      if #processed == 0 then
-        callback("No valid commit messages were generated. Try again.", nil)
-        return
-      end
-
-      callback(nil, processed)
-    end)
-  end)
-end
-
--- Summarize a piece of text using Vertex AI
--- @param text           string  The content to summarize
--- @param opts           table   { prompt_kind, file_path, model, max_tokens, temperature }
--- @param provider_config table  Provider configuration
--- @param callback       function(error, summary_text)
-function M:summarize(text, opts, provider_config, callback)
-  generate_token(function(err, token)
-    if err then
-      callback(err, nil)
-      return
-    end
-
-    local model = opts.model or provider_config.model or "gemini-2.0-flash-lite"
-    local project = provider_config.project
-    local location = provider_config.location or "us-central1"
-    local max_tokens = opts.max_tokens or 220
-    local temperature = opts.temperature or 0.2
-
-    local prompt =
-      require("aicommits.prompts").build_summary_prompt(opts.prompt_kind, text, { file_path = opts.file_path })
-
-    local host = location == "global" and "aiplatform.googleapis.com" or location .. "-aiplatform.googleapis.com"
-    local endpoint = string.format(
-      "https://%s/v1/projects/%s/locations/%s/publishers/google/models/%s:generateContent",
-      host,
-      project,
-      location,
-      model
-    )
-
-    local request_body = {
-      contents = {
-        { role = "user", parts = { { text = prompt.system .. "\n\n" .. prompt.user } } },
-      },
-      generationConfig = { temperature = temperature, maxOutputTokens = max_tokens, candidateCount = 1 },
-    }
-
-    local headers = { Authorization = "Bearer " .. token, ["Content-Type"] = "application/json" }
-
-    http.post(endpoint, headers, vim.json.encode(request_body), function(http_err, response_body)
-      if http_err then
-        callback(http_err, nil)
-        return
-      end
-      local ok, response = pcall(vim.json.decode, response_body)
-      if not ok then
-        callback("Failed to parse Vertex summarize response: " .. tostring(response), nil)
-        return
-      end
-      if response.error then
-        callback("Vertex AI Error: " .. (response.error.message or vim.inspect(response.error)), nil)
-        return
-      end
-      local text_out = vim.tbl_get(response, "candidates", 1, "content", "parts", 1, "text") or ""
-      if text_out == "" then
-        callback("Vertex returned empty summary", nil)
-        return
-      end
-      callback(nil, text_out)
+      callback(nil, texts)
     end)
   end)
 end

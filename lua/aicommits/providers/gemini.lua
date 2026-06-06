@@ -1,8 +1,7 @@
 -- Google Gemini API (AI Studio) provider implementation for aicommits.nvim
 -- Uses generativelanguage.googleapis.com endpoint with simple API key authentication
 local base = require("aicommits.providers.base")
-local http = require("aicommits.http")
-local prompts = require("aicommits.prompts")
+local request = require("aicommits.request")
 
 -- Create Gemini API provider instance
 local M = base.new({
@@ -34,11 +33,11 @@ local function get_api_key(config)
   return nil
 end
 
--- Implementation: Generate commit message(s) using Gemini API
--- @param diff string The git diff to generate message for
--- @param config table Provider-specific configuration
--- @param callback function(error, messages) Callback with error or array of messages
-function M:generate_commit_message(diff, config, callback)
+-- Provider-agnostic transport for Gemini API (AI Studio).
+-- @param envelope table { system, user, model, max_tokens, temperature, n }
+-- @param config   table Provider configuration
+-- @param callback function(error, texts)
+function M:generate_text(envelope, config, callback)
   local api_key = get_api_key(config)
   if not api_key then
     callback(
@@ -48,149 +47,65 @@ function M:generate_commit_message(diff, config, callback)
     return
   end
 
-  -- Get configuration with defaults
-  local model = config.model or "gemini-2.5-flash"
-  local max_length = config.max_length or 50
-  local temperature = config.temperature or 0.7
-  local max_tokens = config.max_tokens or 200
-  local generate = config.generate or 1
-  local thinking_budget = config.thinking_budget or 0
-
-  -- Build Gemini API endpoint
+  local model = envelope.model or config.model or "gemini-2.5-flash"
   local endpoint = string.format("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", model)
 
-  -- Build system prompt
-  local system_prompt = prompts.build_system_prompt(max_length, config.commitlint_config)
+  local generation_config = {
+    temperature = envelope.temperature,
+    maxOutputTokens = envelope.max_tokens,
+    candidateCount = envelope.n or 1,
+  }
+  if envelope.thinking_budget ~= nil then
+    generation_config.thinkingConfig = { thinkingBudget = envelope.thinking_budget }
+  end
 
-  -- Build Gemini API request body (contents array format)
   local request_body = {
     contents = {
-      {
-        role = "user",
-        parts = {
-          {
-            text = system_prompt .. "\n\n" .. diff,
-          },
-        },
-      },
+      { role = "user", parts = { { text = (envelope.system or "") .. "\n\n" .. (envelope.user or "") } } },
     },
-    generationConfig = {
-      temperature = temperature,
-      maxOutputTokens = max_tokens,
-      candidateCount = generate,
-      thinkingConfig = {
-        thinkingBudget = thinking_budget,
-      },
-    },
+    generationConfig = generation_config,
   }
 
-  -- Make API request
-  http.post(endpoint, self:get_auth_headers(config), vim.json.encode(request_body), function(err, response_body)
+  request.send({
+    url = endpoint,
+    headers = self:get_auth_headers(config),
+    body = vim.json.encode(request_body),
+    policy = request.resolve_policy(config),
+  }, function(err, result)
     if err then
       callback(err, nil)
       return
     end
 
-    -- Parse JSON response
-    local ok, response = pcall(vim.json.decode, response_body)
+    local ok, response = pcall(vim.json.decode, result.body)
     if not ok then
       callback("Failed to parse Gemini API response: " .. tostring(response), nil)
       return
     end
 
-    -- Check for API errors
     if response.error then
-      local error_msg = "Gemini API Error: " .. (response.error.message or vim.inspect(response.error))
-      callback(error_msg, nil)
+      callback("Gemini API Error: " .. (response.error.message or vim.inspect(response.error)), nil)
       return
     end
 
-    -- Extract messages from response (Gemini candidates format)
     if not response.candidates or #response.candidates == 0 then
       callback("No commit messages were generated. Try again.", nil)
       return
     end
 
-    local messages = {}
+    local texts = {}
     for _, candidate in ipairs(response.candidates) do
       if candidate.content and candidate.content.parts then
         for _, part in ipairs(candidate.content.parts) do
           if part.text and part.text ~= "" then
-            table.insert(messages, part.text)
+            table.insert(texts, part.text)
           end
         end
       end
     end
 
-    -- Process and return messages
-    local processed = prompts.process_messages(messages)
-    if #processed == 0 then
-      callback("No valid commit messages were generated. Try again.", nil)
-      return
-    end
-
-    callback(nil, processed)
+    callback(nil, texts)
   end)
-end
-
--- Summarize a piece of text using Gemini API
--- @param text           string  The content to summarize
--- @param opts           table   { prompt_kind, file_path, model, max_tokens, temperature }
--- @param provider_config table  Provider configuration
--- @param callback       function(error, summary_text)
-function M:summarize(text, opts, provider_config, callback)
-  local api_key = get_api_key(provider_config)
-  if not api_key then
-    callback("Gemini API key not found for summarize call", nil)
-    return
-  end
-
-  local model = opts.model or provider_config.model or "gemini-2.5-flash"
-  local max_tokens = opts.max_tokens or 220
-  local temperature = opts.temperature or 0.2
-
-  local prompt =
-    require("aicommits.prompts").build_summary_prompt(opts.prompt_kind, text, { file_path = opts.file_path })
-
-  local endpoint = string.format("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", model)
-
-  local request_body = {
-    contents = {
-      { role = "user", parts = { { text = prompt.system .. "\n\n" .. prompt.user } } },
-    },
-    generationConfig = {
-      temperature = temperature,
-      maxOutputTokens = max_tokens,
-      candidateCount = 1,
-    },
-  }
-
-  http.post(
-    endpoint,
-    self:get_auth_headers(provider_config),
-    vim.json.encode(request_body),
-    function(err, response_body)
-      if err then
-        callback(err, nil)
-        return
-      end
-      local ok, response = pcall(vim.json.decode, response_body)
-      if not ok then
-        callback("Failed to parse Gemini summarize response: " .. tostring(response), nil)
-        return
-      end
-      if response.error then
-        callback("Gemini API Error: " .. (response.error.message or vim.inspect(response.error)), nil)
-        return
-      end
-      local text_out = vim.tbl_get(response, "candidates", 1, "content", "parts", 1, "text") or ""
-      if text_out == "" then
-        callback("Gemini returned empty summary", nil)
-        return
-      end
-      callback(nil, text_out)
-    end
-  )
 end
 
 -- Validate Gemini API provider configuration

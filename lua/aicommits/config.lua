@@ -112,13 +112,50 @@ M.defaults = {
     summary_temperature = 0.2,
     concurrency = 4,
   },
+
+  -- Request policy (timeout, retry, backoff, global concurrency)
+  request = {
+    timeout_ms = 30000,
+    max_retries = 2, -- total attempts = 1 + max_retries
+    backoff_base_ms = 500,
+    backoff_max_ms = 8000,
+    backoff_jitter = true,
+    retry_on_status = { 408, 429, 500, 502, 503, 504 },
+    respect_retry_after = true,
+    max_concurrency = 4,
+  },
 }
 
 -- Setup configuration by merging user options with defaults
 function M.setup(user_opts)
   user_opts = user_opts or {}
 
-  config = vim.tbl_deep_extend("force", M.defaults, user_opts)
+  -- Deep-copy defaults first so post-merge mutations (e.g. the concurrency-alias
+  -- fold below) never corrupt the shared M.defaults table — tbl_deep_extend aliases
+  -- nested default tables that the user did not override.
+  config = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), user_opts)
+
+  -- Back-compat: large_diff.concurrency is the legacy knob for what is now
+  -- request.max_concurrency. Detect EXPLICIT user intent from user_opts (not the
+  -- merged config, whose defaults are indistinguishable from user values).
+  local user_ld = user_opts.large_diff or {}
+  local user_req = user_opts.request or {}
+  local legacy_set = user_ld.concurrency ~= nil
+  local canonical_set = user_req.max_concurrency ~= nil
+
+  if legacy_set then
+    if not canonical_set then
+      -- Fold the legacy value into the canonical knob.
+      config.request.max_concurrency = user_ld.concurrency
+    end
+    -- Soft deprecation notice, emitted once per setup() call that passes the
+    -- legacy key (fires whether or not we folded).
+    vim.notify(
+      "aicommits: large_diff.concurrency is deprecated; use request.max_concurrency instead.",
+      vim.log.levels.WARN
+    )
+  end
+
   return config
 end
 
@@ -192,6 +229,48 @@ function M.validate()
         errors,
         string.format("large_diff.max_chunks_per_file must be a positive integer; got '%s'", max_chunks_per_file)
       )
+    end
+  end
+
+  if config.request then
+    local r = config.request
+
+    local function check_positive(name, val)
+      if val ~= nil and (type(val) ~= "number" or val <= 0) then
+        table.insert(errors, string.format("request.%s must be a positive number; got '%s'", name, tostring(val)))
+      end
+    end
+
+    check_positive("timeout_ms", r.timeout_ms)
+    check_positive("backoff_base_ms", r.backoff_base_ms)
+    check_positive("backoff_max_ms", r.backoff_max_ms)
+    check_positive("max_concurrency", r.max_concurrency)
+
+    if r.max_retries ~= nil and (type(r.max_retries) ~= "number" or r.max_retries < 0 or r.max_retries % 1 ~= 0) then
+      table.insert(
+        errors,
+        string.format("request.max_retries must be an integer >= 0; got '%s'", tostring(r.max_retries))
+      )
+    end
+
+    if r.respect_retry_after ~= nil and type(r.respect_retry_after) ~= "boolean" then
+      table.insert(errors, "request.respect_retry_after must be a boolean")
+    end
+    if r.backoff_jitter ~= nil and type(r.backoff_jitter) ~= "boolean" then
+      table.insert(errors, "request.backoff_jitter must be a boolean")
+    end
+
+    if r.retry_on_status ~= nil then
+      if type(r.retry_on_status) ~= "table" then
+        table.insert(errors, "request.retry_on_status must be an array of integers")
+      else
+        for _, code in ipairs(r.retry_on_status) do
+          if type(code) ~= "number" or code % 1 ~= 0 then
+            table.insert(errors, "request.retry_on_status must be an array of integers")
+            break
+          end
+        end
+      end
     end
   end
 

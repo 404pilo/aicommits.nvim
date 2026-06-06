@@ -22,10 +22,13 @@ describe("vertex provider", function()
       assert.is_function(vertex.get_auth_headers)
       assert.is_function(vertex.get_capabilities)
     end)
+  end)
 
-    -- GAP: provider-summarize-interface-exists (vertex)
-    it("exposes summarize as a function", function()
-      assert.is_function(vertex.summarize)
+  describe("interface", function()
+    it("implements generate_text and not summarize", function()
+      local v = require("aicommits.providers.vertex")
+      assert.is_function(v.generate_text)
+      assert.is_nil(v.summarize)
     end)
   end)
 
@@ -277,31 +280,34 @@ describe("vertex provider", function()
         return 1
       end
 
-      -- Mock http.post to prevent actual API call
-      package.loaded["aicommits.http"] = {
-        post = function(endpoint, headers, body, callback)
-          callback(
-            nil,
-            vim.json.encode({
-              candidates = {
-                {
-                  content = {
-                    parts = {
-                      { text = "test: commit message" },
-                    },
+      -- Mock request.send to prevent actual API call
+      local request = require("aicommits.request")
+      local orig_send = request.send
+      request.send = function(_send_opts, cb)
+        cb(nil, {
+          status = 200,
+          body = vim.json.encode({
+            candidates = {
+              {
+                content = {
+                  parts = {
+                    { text = "test: commit message" },
                   },
                 },
               },
-            })
-          )
-        end,
-      }
+            },
+          }),
+          headers = {},
+        })
+      end
 
       vertex:generate_commit_message("test diff", {
         model = "gemini-2.0-flash-lite",
         project = "my-project",
         location = "us-central1",
       }, function(err, messages) end)
+
+      request.send = orig_send
 
       assert.is_true(gcloud_called)
       assert.equals("gcloud auth application-default print-access-token", gcloud_command)
@@ -321,25 +327,26 @@ describe("vertex provider", function()
         return 1
       end
 
-      -- Mock http.post
-      package.loaded["aicommits.http"] = {
-        post = function(endpoint, headers, body, callback)
-          callback(
-            nil,
-            vim.json.encode({
-              candidates = {
-                {
-                  content = {
-                    parts = {
-                      { text = "test: commit message" },
-                    },
+      -- Mock request.send
+      local request = require("aicommits.request")
+      local orig_send = request.send
+      request.send = function(_send_opts, cb)
+        cb(nil, {
+          status = 200,
+          body = vim.json.encode({
+            candidates = {
+              {
+                content = {
+                  parts = {
+                    { text = "test: commit message" },
                   },
                 },
               },
-            })
-          )
-        end,
-      }
+            },
+          }),
+          headers = {},
+        })
+      end
 
       -- First call
       vertex:generate_commit_message("test diff 1", {
@@ -355,119 +362,130 @@ describe("vertex provider", function()
         location = "us-central1",
       }, function(err, messages) end)
 
+      request.send = orig_send
+
       -- Should only call gcloud once due to caching
       assert.equals(1, gcloud_call_count)
     end)
   end)
 
-  describe("summarize()", function()
-    local orig_jobstart
-    local orig_executable
-    local M
+  describe("generate_text()", function()
+    it("maps n to candidateCount (default 3 preserved) and parses candidates", function()
+      local vertex_mod = require("aicommits.providers.vertex")
+      -- Stub the cached token so generate_token returns immediately.
+      vertex_mod._cached_token = "tok"
+      vertex_mod._token_expiry = os.time() + 3600
 
-    before_each(function()
-      -- Re-require to get a fresh module reference for cache fields.
-      package.loaded["aicommits.providers.vertex"] = nil
-      M = require("aicommits.providers.vertex")
-      -- Reset token cache so each test starts without a cached token.
-      M._cached_token = nil
-      M._token_expiry = 0
-      orig_jobstart = vim.fn.jobstart
-      -- Stub vim.fn.executable so generate_token's is_gcloud_available() check
-      -- always passes regardless of whether gcloud is installed on the test machine.
-      orig_executable = vim.fn.executable
+      local request = require("aicommits.request")
+      local orig_send = request.send
+      local captured
+      request.send = function(send_opts, cb)
+        captured = send_opts
+        cb(nil, {
+          status = 200,
+          body = vim.json.encode({
+            candidates = {
+              { content = { parts = { { text = "a" } } } },
+              { content = { parts = { { text = "b" } } } },
+              { content = { parts = { { text = "c" } } } },
+            },
+          }),
+          headers = {},
+        })
+      end
+
+      local err, texts
+      vertex_mod:generate_text(
+        { system = "S", user = "U", model = "gemini-2.0-flash-lite", n = 3, temperature = 0.7, max_tokens = 200 },
+        { project = "p", location = "us-central1", model = "gemini-2.0-flash-lite" },
+        function(e, t)
+          err, texts = e, t
+        end
+      )
+
+      vim.wait(1000, function()
+        return texts ~= nil or err ~= nil
+      end)
+
+      assert.is_nil(err)
+      assert.same({ "a", "b", "c" }, texts)
+      local body = vim.json.decode(captured.body)
+      assert.equals(3, body.generationConfig.candidateCount)
+
+      request.send = orig_send
+    end)
+
+    it("single-flights gcloud token fetch under N concurrent cold-cache calls", function()
+      local vertex_mod = require("aicommits.providers.vertex")
+      -- Cold cache: force the gcloud path.
+      vertex_mod._cached_token = nil
+      vertex_mod._token_expiry = 0
+
+      local orig_jobstart = vim.fn.jobstart
+      local orig_executable = vim.fn.executable
       vim.fn.executable = function(cmd)
         if cmd == "gcloud" then
           return 1
         end
         return orig_executable(cmd)
       end
-    end)
 
-    after_each(function()
-      vim.fn.jobstart = orig_jobstart
-      vim.fn.executable = orig_executable
-    end)
+      -- Count subprocess spawns; capture the on_exit so we can resolve all
+      -- waiters from a single fetch AFTER every concurrent call has been issued.
+      local spawn_count = 0
+      local pending_exit = nil
+      local pending_stdout = nil
+      vim.fn.jobstart = function(_, opts)
+        spawn_count = spawn_count + 1
+        pending_stdout = opts.on_stdout
+        pending_exit = opts.on_exit
+        return 1
+      end
 
-    it("calls callback with summary text on success", function()
-      -- Stub http.post to return a canned Vertex response
-      local http = require("aicommits.http")
-      local orig_post = http.post
-      http.post = function(_url, _headers, _body, cb)
-        cb(
-          nil,
-          vim.json.encode({
-            candidates = {
-              {
-                content = {
-                  parts = { { text = "- refactored vertex helper" } },
-                },
-              },
-            },
-          })
+      local request = require("aicommits.request")
+      local orig_send = request.send
+      local send_count = 0
+      request.send = function(_, cb)
+        send_count = send_count + 1
+        cb(nil, {
+          status = 200,
+          body = vim.json.encode({
+            candidates = { { content = { parts = { { text = "ok" } } } } },
+          }),
+          headers = {},
+        })
+      end
+
+      local N = 8
+      local done = 0
+      for _ = 1, N do
+        vertex_mod:generate_text(
+          { system = "S", user = "U", model = "m", n = 1 },
+          { project = "p", location = "us-central1", model = "m" },
+          function()
+            done = done + 1
+          end
         )
       end
 
-      -- Stub vim.fn.jobstart to inject a fake token synchronously.
-      vim.fn.jobstart = function(cmd, opts)
-        if opts.on_stdout then
-          opts.on_stdout(0, { "fake.token.here" }, "stdout")
-        end
-        if opts.on_exit then
-          opts.on_exit(0, 0, "exit")
-        end
-        return 1
-      end
+      -- All N calls issued with a cold cache, yet only ONE gcloud spawn.
+      assert.equals(1, spawn_count)
 
-      local err, summary
-      M:summarize(
-        "diff text",
-        { prompt_kind = "chunk", file_path = "a.lua", max_tokens = 220, temperature = 0.2 },
-        { project = "my-project", location = "us-central1", model = "gemini-2.0-flash-lite" },
-        function(e, s)
-          err = e
-          summary = s
-        end
-      )
+      -- Resolve the single fetch; every waiter should now proceed to request.send.
+      pending_stdout(nil, { "tok123" })
+      pending_exit(nil, 0)
 
-      assert.is_nil(err)
-      assert.is_string(summary)
-      assert.is_truthy(summary:match("vertex helper"))
+      vim.wait(1000, function()
+        return done == N
+      end)
 
-      http.post = orig_post
-    end)
+      assert.equals(N, done)
+      assert.equals(N, send_count)
+      assert.equals("tok123", vertex_mod._cached_token)
 
-    it("calls callback with error when http.post returns error", function()
-      local http = require("aicommits.http")
-      local orig_post = http.post
-      http.post = function(_url, _headers, _body, cb)
-        cb("network error", nil)
-      end
-
-      -- Stub vim.fn.jobstart to inject a fake token synchronously.
-      vim.fn.jobstart = function(cmd, opts)
-        if opts.on_stdout then
-          opts.on_stdout(0, { "fake.token.here" }, "stdout")
-        end
-        if opts.on_exit then
-          opts.on_exit(0, 0, "exit")
-        end
-        return 1
-      end
-
-      local err
-      M:summarize(
-        "diff text",
-        { prompt_kind = "chunk", file_path = "a.lua", max_tokens = 220, temperature = 0.2 },
-        { project = "my-project", location = "us-central1" },
-        function(e, _)
-          err = e
-        end
-      )
-
-      assert.is_string(err)
-
-      http.post = orig_post
+      request.send = orig_send
+      vim.fn.jobstart = orig_jobstart
+      vim.fn.executable = orig_executable
     end)
   end)
 end)

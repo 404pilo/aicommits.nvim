@@ -175,9 +175,9 @@ describe("verifier rich-input scenarios", function()
   it("scenario 7: prepare summarizes grown chunks without overflow demotion note", function()
     local summarize_calls = 0
     local provider = {
-      summarize = function(self, _text, _opts, _provider_config, cb)
+      generate_text = function(self, _envelope, _provider_config, cb)
         summarize_calls = summarize_calls + 1
-        cb(nil, "summary")
+        cb(nil, { "summary" })
       end,
     }
 
@@ -236,9 +236,9 @@ describe("verifier rich-input scenarios", function()
 
     local summarize_calls = 0
     local provider = {
-      summarize = function(self, _text, _opts, _provider_config, cb)
+      generate_text = function(self, _envelope, _provider_config, cb)
         summarize_calls = summarize_calls + 1
-        cb(nil, "summary")
+        cb(nil, { "summary" })
       end,
     }
 
@@ -297,9 +297,9 @@ describe("verifier rich-input scenarios", function()
 
     local summarize_calls = 0
     local provider = {
-      summarize = function(self, _text, _opts, _provider_config, cb)
+      generate_text = function(self, _envelope, _provider_config, cb)
         summarize_calls = summarize_calls + 1
-        cb(nil, "summary")
+        cb(nil, { "summary" })
       end,
     }
 
@@ -362,9 +362,9 @@ describe("verifier rich-input scenarios", function()
   it("scenario 12: keeps unrelated small-inline rich-input behavior unchanged", function()
     local summarize_calls = 0
     local provider = {
-      summarize = function(self, _text, _opts, _provider_config, cb)
+      generate_text = function(self, _envelope, _provider_config, cb)
         summarize_calls = summarize_calls + 1
-        cb(nil, "unused")
+        cb(nil, { "unused" })
       end,
     }
 

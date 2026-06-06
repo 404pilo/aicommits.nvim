@@ -426,11 +426,11 @@ describe("prepare() integration", function()
   local function make_mock_provider(summary_result)
     -- summary_result: string (success) or error string prefixed with "ERR:"
     return {
-      summarize = function(self, text, opts, provider_config, callback)
+      generate_text = function(self, envelope, provider_config, callback)
         if summary_result:sub(1, 4) == "ERR:" then
           callback(summary_result:sub(5), nil)
         else
-          callback(nil, summary_result)
+          callback(nil, { summary_result })
         end
       end,
     }
@@ -573,9 +573,9 @@ describe("prepare() integration", function()
     local restore = stub_stat(" big.lua | 50 +++\n 1 file changed\n")
     local summarize_calls = 0
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         summarize_calls = summarize_calls + 1
-        cb(nil, "summary")
+        cb(nil, { "summary" })
       end,
     }
 
@@ -630,9 +630,9 @@ describe("prepare() integration", function()
 
     local batch_count = 0
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         batch_count = batch_count + 1
-        cb(nil, "- batch summary " .. batch_count)
+        cb(nil, { "- batch summary " .. batch_count })
       end,
     }
 
@@ -678,9 +678,9 @@ describe("prepare() integration", function()
     local restore = stub_stat(" abcdefghij.lua | 1\n klmnopqrst.lua | 1\n")
     local batch_count = 0
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         batch_count = batch_count + 1
-        cb(nil, "- batch summary " .. batch_count)
+        cb(nil, { "- batch summary " .. batch_count })
       end,
     }
 
@@ -723,7 +723,7 @@ describe("prepare() integration", function()
   it("degrades file to stat-only when chunk summary call fails", function()
     local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         cb("chunk error", nil)
       end,
     }
@@ -770,12 +770,12 @@ describe("prepare() integration", function()
     local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")
     local call_num = 0
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         call_num = call_num + 1
         if call_num == 1 then
           cb("chunk error", nil)
         else
-          cb(nil, "- summary " .. call_num)
+          cb(nil, { "- summary " .. call_num })
         end
       end,
     }
@@ -831,12 +831,15 @@ describe("prepare() integration", function()
     local restore = stub_stat(" good.lua | 5\n bad.lua | 5\n")
     local call_num = 0
     local provider = {
-      summarize = function(self, _text, opts, _cfg, cb)
+      generate_text = function(self, envelope, _cfg, cb)
         call_num = call_num + 1
-        if opts and opts.prompt_kind == "file_rollup" and opts.file_path == "bad.lua" then
+        -- Rollup prompts use the "paragraph" system text; chunk prompts the
+        -- "bullet-point" text. The file path is embedded in envelope.user.
+        local is_rollup = envelope.system and envelope.system:match("paragraph") ~= nil
+        if is_rollup and envelope.user and envelope.user:match("bad%.lua") then
           cb("rollup error", nil)
         else
-          cb(nil, "- summary " .. call_num)
+          cb(nil, { "- summary " .. call_num })
         end
       end,
     }
@@ -881,7 +884,7 @@ describe("prepare() integration", function()
   it("degrades batch to stat-only when batch summary call fails", function()
     local restore = stub_stat(" a.lua | 1\n b.lua | 1\n c.lua | 1\n")
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         cb("batch error", nil)
       end,
     }
@@ -925,15 +928,17 @@ describe("prepare() integration", function()
   it("produces mixed payload when some large files fail and one succeeds", function()
     local restore = stub_stat(" a.lua | 5\n b.lua | 5\n c.lua | 5\n")
     local provider = {
-      summarize = function(self, _text, opts, _cfg, cb)
-        local kind = opts and opts.prompt_kind
-        local path = opts and opts.file_path
-        if kind == "chunk" then
+      generate_text = function(self, envelope, _cfg, cb)
+        -- Chunk prompts carry the "bullet-point" system text; rollups the
+        -- "paragraph" text. The file path is embedded in envelope.user.
+        local is_chunk = envelope.system and envelope.system:match("bullet%-point") ~= nil
+        local is_a = envelope.user and envelope.user:match("a%.lua") ~= nil
+        if is_chunk then
           -- All chunk summarizations succeed so each file proceeds to roll-up
-          cb(nil, "- chunk summary")
-        elseif kind == "file_rollup" and path == "a.lua" then
+          cb(nil, { "- chunk summary" })
+        elseif is_a then
           -- Only a.lua's rollup succeeds
-          cb(nil, "- a.lua full summary")
+          cb(nil, { "- a.lua full summary" })
         else
           -- b.lua and c.lua rollups fail
           cb("rollup error", nil)
@@ -985,9 +990,9 @@ describe("prepare() integration", function()
     local restore = stub_stat(" a.lua | 1\n b.lua | 1\n")
     local summarize_calls = 0
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         summarize_calls = summarize_calls + 1
-        cb(nil, "should not happen")
+        cb(nil, { "should not happen" })
       end,
     }
 
@@ -1036,9 +1041,9 @@ describe("prepare() integration", function()
 
     local summarize_calls = 0
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         summarize_calls = summarize_calls + 1
-        cb(nil, "summary")
+        cb(nil, { "summary" })
       end,
     }
 
@@ -1166,9 +1171,9 @@ describe("prepare() integration", function()
     local restore = stub_stat(" small.lua | 2\n 1 file changed\n")
     local summarize_calls = 0
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         summarize_calls = summarize_calls + 1
-        cb(nil, "summary")
+        cb(nil, { "summary" })
       end,
     }
 
@@ -1210,9 +1215,9 @@ describe("prepare() integration", function()
     local restore = stub_stat(" hard.lua | 90 +++\n 1 file changed\n")
     local summarize_calls = 0
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
+      generate_text = function(self, _envelope, _cfg, cb)
         summarize_calls = summarize_calls + 1
-        cb(nil, "summary")
+        cb(nil, { "summary" })
       end,
     }
 
@@ -1408,12 +1413,133 @@ describe("prepare() integration", function()
 
     local found = false
     for _, call in ipairs(status_calls) do
-      if call.kind == "show" and call.msg == "Composing file summaries..." then
+      if call.kind == "show" and call.msg == "Composing file summaries 1/1..." then
         found = true
         break
       end
     end
-    assert.is_true(found, "Expected 'Composing file summaries...' status message")
+    assert.is_true(found, "Expected 'Composing file summaries 1/1...' status message")
+  end)
+
+  -- counter: composing status carries an "N/M" file counter, M = number of large files
+  it("shows a file counter (N/M) in the composing status for multiple large files", function()
+    local restore = stub_stat(" a.lua | 10 +++\n b.lua | 10 +++\n 2 files changed\n")
+    local status_msgs = {}
+    local picker = require("aicommits.ui.picker")
+    local orig_show = picker.show_status
+    local orig_close = picker.close_status
+    picker.show_status = function(msg)
+      table.insert(status_msgs, msg)
+    end
+    picker.close_status = function() end
+
+    local provider = make_mock_provider("- summary")
+
+    local function mk_big(name)
+      return "diff --git a/"
+        .. name
+        .. " b/"
+        .. name
+        .. "\n@@ -1,5 +1,6 @@\n line1\n+line2"
+        .. string.rep("\nmore content", 30)
+    end
+    local diff = mk_big("a.lua") .. "\n" .. mk_big("b.lua")
+    local diff_data = { diff = diff, files = { "a.lua", "b.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({
+      large_diff = {
+        mode = "always",
+        threshold_chars = 0,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        small_file_chars = 50,
+        max_small_files_inline = 10,
+        small_file_batch_chars = 4000,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
+
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function() end)
+
+    picker.show_status = orig_show
+    picker.close_status = orig_close
+    restore()
+
+    local saw_counter, saw_full = false, false
+    for _, msg in ipairs(status_msgs) do
+      if type(msg) == "string" and msg:match("^Composing file summaries %d+/2%.%.%.$") then
+        saw_counter = true
+        if msg == "Composing file summaries 2/2..." then
+          saw_full = true
+        end
+      end
+    end
+    assert.is_true(saw_counter, "expected a 'Composing file summaries N/2...' counter message")
+    assert.is_true(saw_full, "expected the counter to reach 2/2")
+  end)
+
+  -- counter: summarizing status carries an "N/M" file counter for the per-chunk
+  -- sub-phase (ticks when each file's chunk calls have returned, before roll-up)
+  it("shows a file counter (N/M) in the summarizing status for multiple large files", function()
+    local restore = stub_stat(" a.lua | 10 +++\n b.lua | 10 +++\n 2 files changed\n")
+    local status_msgs = {}
+    local picker = require("aicommits.ui.picker")
+    local orig_show = picker.show_status
+    local orig_close = picker.close_status
+    picker.show_status = function(msg)
+      table.insert(status_msgs, msg)
+    end
+    picker.close_status = function() end
+
+    local provider = make_mock_provider("- summary")
+
+    local function mk_big(name)
+      return "diff --git a/"
+        .. name
+        .. " b/"
+        .. name
+        .. "\n@@ -1,5 +1,6 @@\n line1\n+line2"
+        .. string.rep("\nmore content", 30)
+    end
+    local diff = mk_big("a.lua") .. "\n" .. mk_big("b.lua")
+    local diff_data = { diff = diff, files = { "a.lua", "b.lua" } }
+
+    local config = require("aicommits.config")
+    config.setup({
+      large_diff = {
+        mode = "always",
+        threshold_chars = 0,
+        chunk_chars = 6000,
+        max_chunks_per_file = 6,
+        small_file_chars = 50,
+        max_small_files_inline = 10,
+        small_file_batch_chars = 4000,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+        concurrency = 4,
+      },
+    })
+
+    require("aicommits.input.rich").prepare(diff_data, provider, {}, function() end)
+
+    picker.show_status = orig_show
+    picker.close_status = orig_close
+    restore()
+
+    local saw_counter, saw_full = false, false
+    for _, msg in ipairs(status_msgs) do
+      if type(msg) == "string" and msg:match("^Summarizing %d+ files in parallel %d+/2%.%.%.$") then
+        saw_counter = true
+        if msg == "Summarizing 2 files in parallel 2/2..." then
+          saw_full = true
+        end
+      end
+    end
+    assert.is_true(saw_counter, "expected a 'Summarizing N files in parallel i/2...' counter message")
+    assert.is_true(saw_full, "expected the summarizing counter to reach 2/2")
   end)
 
   -- GAP: status-ui-close-on-success
@@ -1524,8 +1650,8 @@ describe("prepare() integration", function()
     end
 
     local provider = {
-      summarize = function(self, _text, _opts, _cfg, cb)
-        cb(nil, "summary")
+      generate_text = function(self, _envelope, _cfg, cb)
+        cb(nil, { "summary" })
       end,
     }
 
@@ -1560,14 +1686,14 @@ describe("prepare() integration", function()
     end
   end)
 
-  -- GAP: provider-summarize-uses-provider-config-auth
-  it("propagates provider_config (including api_key) to provider.summarize calls", function()
+  -- GAP: provider-generate-text-uses-provider-config-auth
+  it("propagates provider_config (including api_key) to provider.generate_text calls", function()
     local restore = stub_stat(" big.lua | 10 +++\n 1 file changed\n")
     local received_cfg = nil
     local provider = {
-      summarize = function(self, _text, _opts, cfg, cb)
+      generate_text = function(self, _envelope, cfg, cb)
         received_cfg = cfg
-        cb(nil, "- summary")
+        cb(nil, { "- summary" })
       end,
     }
 
@@ -1600,5 +1726,103 @@ describe("prepare() integration", function()
 
     assert.is_not_nil(received_cfg)
     assert.equals("my-secret-key", received_cfg.api_key)
+  end)
+
+  it("builds the summary envelope in rich.lua with n=1 and system/user set", function()
+    local restore = stub_stat("1 file changed")
+
+    local captured_envelope
+    local provider = {
+      generate_text = function(_self, envelope, _cfg, cb)
+        captured_envelope = captured_envelope or envelope
+        cb(nil, { "summary" })
+      end,
+    }
+
+    local config = require("aicommits.config")
+    config.setup({ large_diff = { mode = "always", small_file_chars = 1 } })
+
+    local rich_mod = require("aicommits.input.rich")
+    local done
+    rich_mod.prepare(
+      { diff = "diff --git a/big.lua b/big.lua\n@@ -1 +1 @@\n-old\n+new\n", files = {} },
+      provider,
+      {},
+      function()
+        done = true
+      end
+    )
+    vim.wait(2000, function()
+      return done == true
+    end)
+
+    restore()
+
+    assert.is_table(captured_envelope)
+    assert.equals(1, captured_envelope.n)
+    assert.is_string(captured_envelope.system)
+    assert.is_string(captured_envelope.user)
+  end)
+
+  it("pre-spawn scheduler is bounded by max_concurrency, not math.huge (F5)", function()
+    -- Regression test: before the fix both schedulers were make_scheduler(math.huge),
+    -- meaning all N chunks dispatched immediately even though the request semaphore
+    -- would throttle them later. That wastes memory / scheduling budget proportional
+    -- to chunk count instead of max_concurrency. After the fix, pre_spawn_bound =
+    -- request.resolve_policy(provider_config).max_concurrency (or 1), so at most
+    -- pre_spawn_bound generate_text calls are in flight before any returns.
+    local restore = stub_stat(" huge.lua | 999 +++\n 1 file changed\n")
+
+    local generate_text_in_flight = 0
+    local generate_text_peak = 0
+    -- Provider that NEVER calls back; we just track concurrent in-flight calls.
+    local provider = {
+      generate_text = function(_self, _envelope, _cfg, _cb)
+        generate_text_in_flight = generate_text_in_flight + 1
+        if generate_text_in_flight > generate_text_peak then
+          generate_text_peak = generate_text_in_flight
+        end
+        -- intentionally never calls _cb -> done() never fires -> scheduler saturates
+      end,
+    }
+
+    -- Build a large diff: many small hunks so chunk_chars=50 splits it into 30+ chunks.
+    -- Each hunk is ~40 chars; 30 hunks = ~1200 chars; chunk_chars=50 -> 30 chunks.
+    local hunks = {}
+    for i = 1, 30 do
+      hunks[#hunks + 1] = "@@ -" .. i .. ",1 +" .. i .. ",1 @@\n-old" .. i .. "\n+new" .. i
+    end
+    local big_diff = "diff --git a/huge.lua b/huge.lua\nindex 1111111..2222222 100644\n--- a/huge.lua\n+++ b/huge.lua\n"
+      .. table.concat(hunks, "\n")
+
+    local config = require("aicommits.config")
+    config.setup({
+      large_diff = {
+        mode = "always",
+        threshold_chars = 0,
+        chunk_chars = 50, -- tiny -> many chunks
+        max_chunks_per_file = 999,
+        small_file_chars = 1,
+        max_small_files_inline = 0,
+        small_file_batch_chars = 4000,
+        summary_model = nil,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+      },
+      request = { max_concurrency = 4 },
+    })
+
+    -- provider_config carries no per-provider override -> policy from global config
+    require("aicommits.input.rich").prepare({ diff = big_diff, files = { "huge.lua" } }, provider, {}, function() end)
+
+    restore()
+
+    -- With math.huge, every chunk starts immediately: peak == #chunks (30+).
+    -- With pre_spawn_bound=4, peak == 4.
+    assert.is_true(
+      generate_text_peak <= 4,
+      "peak generate_text calls should be bounded by max_concurrency=4, got " .. generate_text_peak
+    )
+    assert.is_true(generate_text_peak >= 1, "at least one generate_text call must have been dispatched")
   end)
 end)

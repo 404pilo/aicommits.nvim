@@ -89,7 +89,7 @@ describe("input.init dispatcher", function()
     end
 
     local input = require("aicommits.input")
-    input.prepare({ diff = string.rep("x", 50), files = {} }, { summarize = function() end }, {}, function() end)
+    input.prepare({ diff = string.rep("x", 50), files = {} }, {}, {}, function() end)
 
     assert.is_true(called_rich)
     package.preload["aicommits.input.default"] = nil
@@ -117,62 +117,15 @@ describe("input.init dispatcher", function()
     end
 
     local input = require("aicommits.input")
-    input.prepare({ diff = "x", files = {} }, { summarize = function() end }, {}, function() end)
+    input.prepare({ diff = "x", files = {} }, {}, {}, function() end)
 
     assert.is_true(called_rich)
     package.preload["aicommits.input.default"] = nil
     package.preload["aicommits.input.rich"] = nil
   end)
 
-  it("falls back to default when rich mode selected but provider lacks summarize", function()
+  it("routes to rich based on mode alone, without probing provider capability", function()
     config.setup({ large_diff = { mode = "always" } })
-
-    local base = require("aicommits.providers.base")
-    local provider = base.new({
-      name = "x",
-      generate_commit_message = function() end,
-    })
-
-    local called_default = false
-    package.preload["aicommits.input.default"] = function()
-      return {
-        prepare = function(_dd, _p, _pc, cb)
-          called_default = true
-          cb(nil, "raw")
-        end,
-      }
-    end
-    package.preload["aicommits.input.rich"] = function()
-      return {
-        prepare = function()
-          error("should not be called")
-        end,
-      }
-    end
-
-    local original_notify = vim.notify
-    vim.notify = function() end
-
-    local input = require("aicommits.input")
-    input.prepare({ diff = "x", files = {} }, provider, {}, function(e, _p)
-      assert.is_nil(e)
-    end)
-
-    vim.notify = original_notify
-    assert.is_true(called_default)
-    package.preload["aicommits.input.default"] = nil
-    package.preload["aicommits.input.rich"] = nil
-  end)
-
-  it("routes to rich when provider implements summarize", function()
-    config.setup({ large_diff = { mode = "always" } })
-
-    local base = require("aicommits.providers.base")
-    local provider = base.new({
-      name = "x",
-      generate_commit_message = function() end,
-      summarize = function() end,
-    })
 
     local called_rich = false
     package.preload["aicommits.input.default"] = function()
@@ -192,7 +145,8 @@ describe("input.init dispatcher", function()
     end
 
     local input = require("aicommits.input")
-    input.prepare({ diff = "x", files = {} }, provider, {}, function() end)
+    -- Provider implements neither summarize nor generate_text; routing must not care.
+    input.prepare({ diff = "x", files = {} }, {}, {}, function() end)
 
     assert.is_true(called_rich)
     package.preload["aicommits.input.default"] = nil

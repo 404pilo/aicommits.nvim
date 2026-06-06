@@ -1,7 +1,6 @@
 -- OpenAI provider implementation for aicommits.nvim
 local base = require("aicommits.providers.base")
-local http = require("aicommits.http")
-local prompts = require("aicommits.prompts")
+local request = require("aicommits.request")
 
 -- Create OpenAI provider instance
 local M = base.new({
@@ -33,11 +32,11 @@ local function get_api_key(config)
   return nil
 end
 
--- Implementation: Generate commit message(s) using OpenAI API
--- @param diff string The git diff to generate message for
--- @param config table Provider-specific configuration
--- @param callback function(error, messages) Callback with error or array of messages
-function M:generate_commit_message(diff, config, callback)
+-- Provider-agnostic transport for OpenAI chat-completions.
+-- @param envelope table { system, user, model, max_tokens, temperature, n, top_p, frequency_penalty, presence_penalty }
+-- @param config   table Provider configuration
+-- @param callback function(error, texts)
+function M:generate_text(envelope, config, callback)
   local api_key = get_api_key(config)
   if not api_key then
     callback(
@@ -47,141 +46,59 @@ function M:generate_commit_message(diff, config, callback)
     return
   end
 
-  -- Get configuration with defaults
   local endpoint = config.endpoint or "https://api.openai.com/v1/chat/completions"
-  local model = config.model or "gpt-4.1-nano"
-  local max_length = config.max_length or 50
-  local generate = config.generate or 1
-  local temperature = config.temperature or 0.7
-  local top_p = config.top_p or 1
-  local frequency_penalty = config.frequency_penalty or 0
-  local presence_penalty = config.presence_penalty or 0
-  local max_tokens = config.max_tokens or 200
 
-  -- Build OpenAI API request body
   local request_body = {
-    model = model,
+    model = envelope.model or config.model or "gpt-4.1-nano",
     messages = {
-      {
-        role = "system",
-        content = prompts.build_system_prompt(max_length, config.commitlint_config),
-      },
-      {
-        role = "user",
-        content = diff,
-      },
+      { role = "system", content = envelope.system },
+      { role = "user", content = envelope.user },
     },
-    temperature = temperature,
-    top_p = top_p,
-    frequency_penalty = frequency_penalty,
-    presence_penalty = presence_penalty,
-    max_tokens = max_tokens,
+    temperature = envelope.temperature,
+    top_p = envelope.top_p,
+    frequency_penalty = envelope.frequency_penalty,
+    presence_penalty = envelope.presence_penalty,
+    max_tokens = envelope.max_tokens,
     stream = false,
-    n = generate,
+    n = envelope.n or 1,
   }
 
-  -- Make API request
-  http.post(endpoint, self:get_auth_headers(config), vim.json.encode(request_body), function(err, response_body)
+  request.send({
+    url = endpoint,
+    headers = self:get_auth_headers(config),
+    body = vim.json.encode(request_body),
+    policy = request.resolve_policy(config),
+  }, function(err, result)
     if err then
       callback(err, nil)
       return
     end
 
-    -- Parse JSON response
-    local ok, response = pcall(vim.json.decode, response_body)
+    local ok, response = pcall(vim.json.decode, result.body)
     if not ok then
       callback("Failed to parse OpenAI API response: " .. tostring(response), nil)
       return
     end
 
-    -- Check for API errors
     if response.error then
-      local error_msg = "OpenAI API Error: " .. (response.error.message or vim.inspect(response.error))
-      callback(error_msg, nil)
+      callback("OpenAI API Error: " .. (response.error.message or vim.inspect(response.error)), nil)
       return
     end
 
-    -- Extract messages from response
     if not response.choices or #response.choices == 0 then
       callback("No commit messages were generated. Try again.", nil)
       return
     end
 
-    local messages = {}
+    local texts = {}
     for _, choice in ipairs(response.choices) do
       if choice.message and choice.message.content then
-        table.insert(messages, choice.message.content)
+        table.insert(texts, choice.message.content)
       end
     end
 
-    -- Process and return messages
-    local processed = prompts.process_messages(messages)
-    if #processed == 0 then
-      callback("No valid commit messages were generated. Try again.", nil)
-      return
-    end
-
-    callback(nil, processed)
+    callback(nil, texts)
   end)
-end
-
--- Summarize a piece of text using OpenAI API
--- @param text           string  The content to summarize
--- @param opts           table   { prompt_kind, file_path, model, max_tokens, temperature }
--- @param provider_config table  Provider configuration
--- @param callback       function(error, summary_text)
-function M:summarize(text, opts, provider_config, callback)
-  local api_key = get_api_key(provider_config)
-  if not api_key then
-    callback("OpenAI API key not found for summarize call", nil)
-    return
-  end
-
-  local model = opts.model or provider_config.model or "gpt-4.1-nano"
-  local max_tokens = opts.max_tokens or 220
-  local temperature = opts.temperature or 0.2
-  local endpoint = provider_config.endpoint or "https://api.openai.com/v1/chat/completions"
-
-  local prompt =
-    require("aicommits.prompts").build_summary_prompt(opts.prompt_kind, text, { file_path = opts.file_path })
-
-  local request_body = {
-    model = model,
-    messages = {
-      { role = "system", content = prompt.system },
-      { role = "user", content = prompt.user },
-    },
-    max_tokens = max_tokens,
-    temperature = temperature,
-    n = 1,
-  }
-
-  http.post(
-    endpoint,
-    self:get_auth_headers(provider_config),
-    vim.json.encode(request_body),
-    function(err, response_body)
-      if err then
-        callback(err, nil)
-        return
-      end
-      local ok, response = pcall(vim.json.decode, response_body)
-      if not ok then
-        callback("Failed to parse OpenAI summarize response: " .. tostring(response), nil)
-        return
-      end
-      if response.error then
-        callback("OpenAI Error: " .. (response.error.message or vim.inspect(response.error)), nil)
-        return
-      end
-      local text_out = vim.tbl_get(response, "choices", 1, "message", "content") or ""
-      if text_out == "" then
-        callback("OpenAI returned empty summary", nil)
-        return
-      end
-      callback(nil, text_out)
-    end
-  )
 end
 
 -- Validate OpenAI provider configuration

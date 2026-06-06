@@ -273,3 +273,132 @@ describe("validate() large_diff.mode", function()
     assert.equals(0, #errors)
   end)
 end)
+
+describe("request config block", function()
+  local config
+
+  before_each(function()
+    package.loaded["aicommits.config"] = nil
+    config = require("aicommits.config")
+  end)
+
+  it("provides request defaults", function()
+    config.setup({})
+    local req = config.get("request")
+    assert.equals(30000, req.timeout_ms)
+    assert.equals(2, req.max_retries)
+    assert.equals(500, req.backoff_base_ms)
+    assert.equals(8000, req.backoff_max_ms)
+    assert.is_true(req.backoff_jitter)
+    assert.is_true(req.respect_retry_after)
+    assert.equals(4, req.max_concurrency)
+    assert.same({ 408, 429, 500, 502, 503, 504 }, req.retry_on_status)
+  end)
+
+  it("folds user-set large_diff.concurrency into request.max_concurrency", function()
+    local notified = {}
+    local orig_notify = vim.notify
+    vim.notify = function(msg, level)
+      table.insert(notified, { msg = msg, level = level })
+    end
+
+    config.setup({ large_diff = { concurrency = 7 } })
+    assert.equals(7, config.get("request.max_concurrency"))
+    -- deprecation notice fired exactly once
+    local dep = 0
+    for _, n in ipairs(notified) do
+      if n.msg:match("large_diff%.concurrency") then
+        dep = dep + 1
+      end
+    end
+    assert.equals(1, dep)
+
+    vim.notify = orig_notify
+  end)
+
+  it("request.max_concurrency wins when both are explicitly set, notice still fires", function()
+    local notified = {}
+    local orig_notify = vim.notify
+    vim.notify = function(msg)
+      table.insert(notified, msg)
+    end
+
+    config.setup({ large_diff = { concurrency = 7 }, request = { max_concurrency = 3 } })
+    assert.equals(3, config.get("request.max_concurrency"))
+    local dep = 0
+    for _, m in ipairs(notified) do
+      if m:match("large_diff%.concurrency") then
+        dep = dep + 1
+      end
+    end
+    assert.equals(1, dep)
+
+    vim.notify = orig_notify
+  end)
+
+  it("does not fire deprecation notice when only request.max_concurrency is set", function()
+    local notified = {}
+    local orig_notify = vim.notify
+    vim.notify = function(msg)
+      table.insert(notified, msg)
+    end
+
+    config.setup({ request = { max_concurrency = 5 } })
+    assert.equals(5, config.get("request.max_concurrency"))
+    for _, m in ipairs(notified) do
+      assert.is_nil(m:match("large_diff%.concurrency"))
+    end
+
+    vim.notify = orig_notify
+  end)
+end)
+
+describe("validate() request block", function()
+  local config
+
+  before_each(function()
+    package.loaded["aicommits.config"] = nil
+    config = require("aicommits.config")
+  end)
+
+  it("rejects non-positive timeout_ms", function()
+    config.setup({ request = { timeout_ms = 0 } })
+    local ok, errors = config.validate()
+    assert.is_false(ok)
+    assert.is_truthy(errors[1]:match("timeout_ms"))
+  end)
+
+  it("accepts max_retries = 0", function()
+    config.setup({ request = { max_retries = 0 } })
+    local ok = config.validate()
+    assert.is_true(ok)
+  end)
+
+  it("rejects negative max_retries", function()
+    config.setup({ request = { max_retries = -1 } })
+    local ok, errors = config.validate()
+    assert.is_false(ok)
+    assert.is_truthy(errors[1]:match("max_retries"))
+  end)
+
+  it("rejects non-positive max_concurrency", function()
+    config.setup({ request = { max_concurrency = 0 } })
+    local ok, errors = config.validate()
+    assert.is_false(ok)
+    assert.is_truthy(errors[1]:match("max_concurrency"))
+  end)
+
+  it("rejects non-boolean backoff_jitter", function()
+    config.setup({ request = { backoff_jitter = "yes" } })
+    local ok, errors = config.validate()
+    assert.is_false(ok)
+    assert.is_truthy(errors[1]:match("backoff_jitter"))
+  end)
+
+  it("rejects retry_on_status containing a non-integer", function()
+    config.setup({ request = { retry_on_status = { 429, "x" } } })
+    local ok, errors = config.validate()
+    assert.is_false(ok)
+    assert.is_truthy(errors[1]:match("retry_on_status"))
+  end)
+end)

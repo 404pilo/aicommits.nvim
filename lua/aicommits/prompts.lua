@@ -78,39 +78,44 @@ function M.process_messages(messages)
   return result
 end
 
--- Build a prompt pair for summarization calls
--- @param kind  string  "chunk" | "file_rollup" | "small_batch"
--- @param payload string  The diff text or batch of chunk summaries
--- @param opts  table   { file_path = string|nil }
+-- Build a prompt pair for per-chunk summarization of one file's diff chunk.
+-- @param file_path string|nil  Path of the file the chunk belongs to
+-- @param chunk     string      Diff text for this chunk
 -- @return table { system = string, user = string }
-function M.build_summary_prompt(kind, payload, opts)
-  opts = opts or {}
-  if kind == "chunk" then
-    return {
-      system = "You are a code-change summarizer. Produce a concise bullet-point summary"
-        .. " (<=5 bullets, no markdown headers) of what this diff chunk changes."
-        .. " Be specific: name functions, variables, or config keys that are added,"
-        .. " removed, or modified.",
-      user = string.format("File: %s\n\n%s", opts.file_path or "(unknown)", payload),
-    }
-  elseif kind == "file_rollup" then
-    return {
-      system = "You are a code-change summarizer. Given the following chunk summaries"
-        .. " for a single file, produce a single concise paragraph (<=4 sentences)"
-        .. " describing the net effect of the changes.",
-      user = string.format("File: %s\n\nChunk summaries:\n%s", opts.file_path or "(unknown)", payload),
-    }
-  elseif kind == "small_batch" then
-    return {
-      system = "You are a code-change summarizer. Given the following diffs for multiple"
-        .. " small files, produce one concise bullet per file"
-        .. " (format: '- <path>: <change summary>') describing the net change."
-        .. " Do not merge bullets across files.",
-      user = payload,
-    }
-  else
-    error(string.format("build_summary_prompt: unknown kind '%s'", tostring(kind)))
-  end
+function M.build_chunk_summary_prompt(file_path, chunk)
+  return {
+    system = "You are a code-change summarizer. Produce a concise bullet-point summary"
+      .. " (<=5 bullets, no markdown headers) of what this diff chunk changes."
+      .. " Be specific: name functions, variables, or config keys that are added,"
+      .. " removed, or modified.",
+    user = string.format("File: %s\n\n%s", file_path or "(unknown)", chunk),
+  }
+end
+
+-- Build a prompt pair that rolls per-chunk summaries into one file paragraph.
+-- @param file_path       string|nil  Path of the file being summarized
+-- @param chunk_summaries string      Concatenated per-chunk summaries
+-- @return table { system = string, user = string }
+function M.build_file_rollup_prompt(file_path, chunk_summaries)
+  return {
+    system = "You are a code-change summarizer. Given the following chunk summaries"
+      .. " for a single file, produce a single concise paragraph (<=4 sentences)"
+      .. " describing the net effect of the changes.",
+    user = string.format("File: %s\n\nChunk summaries:\n%s", file_path or "(unknown)", chunk_summaries),
+  }
+end
+
+-- Build a prompt pair summarizing a batch of small-file diffs (one bullet per file).
+-- @param batch_payload string  Concatenated small-file diffs
+-- @return table { system = string, user = string }
+function M.build_small_batch_prompt(batch_payload)
+  return {
+    system = "You are a code-change summarizer. Given the following diffs for multiple"
+      .. " small files, produce one concise bullet per file"
+      .. " (format: '- <path>: <change summary>') describing the net change."
+      .. " Do not merge bullets across files.",
+    user = batch_payload,
+  }
 end
 
 return M

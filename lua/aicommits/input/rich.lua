@@ -1,6 +1,8 @@
 -- Rich input mode: summarization pipeline for large staged diffs.
 local M = {}
 
+local prompts = require("aicommits.prompts")
+
 -- Split a full git diff into per-file entries.
 -- Each entry: { path = string, diff = string, is_binary = boolean, is_empty = boolean }
 -- @param diff string  Full output of git diff --cached
@@ -298,8 +300,8 @@ end
 
 -- Prepare the final commit-message payload via the summarization pipeline.
 -- @param diff_data      table   { diff = string, files = table }
--- @param provider       table   Provider instance (must implement :summarize())
--- @param provider_config table  Passed as-is to provider:summarize()
+-- @param provider       table   Provider instance (must implement :generate_text())
+-- @param provider_config table  Passed as-is to provider:generate_text()
 -- @param callback       function(error, final_payload)
 function M.prepare(diff_data, provider, provider_config, callback)
   local config = require("aicommits.config")
@@ -321,14 +323,34 @@ function M.prepare(diff_data, provider, provider_config, callback)
     local file_entries = M.split_diff_by_file(diff_data.diff)
     local buckets = M.bucket_files(file_entries, ld_cfg)
 
-    local sched = M.make_scheduler(ld_cfg.concurrency)
-    -- Chunk scheduler is uncapped so inner chunk tasks never wait for outer slots;
-    -- otherwise concurrency=1 deadlocks (outer task blocks itself).
-    local chunk_sched = M.make_scheduler(math.huge)
+    -- Pre-spawn bound: cap the scheduler to max_concurrency so we never spin up
+    -- more generate_text tasks than the request semaphore will let through.
+    -- The request layer still enforces the hard concurrency cap; this just avoids
+    -- spawning O(chunks) idle closures when max_concurrency << chunk count.
+    local request = require("aicommits.request")
+    local pre_spawn_bound = request.resolve_policy(provider_config).max_concurrency or 1
+    local sched = M.make_scheduler(pre_spawn_bound)
+    local chunk_sched = M.make_scheduler(pre_spawn_bound)
 
     -- Track results
     local large_results = {} -- { path, summary?, stat_line?, is_stat }
     local batch_results = {} -- { paths, summary?, is_stat }
+
+    -- Counter for the "Composing file summaries N/M" status. Incremented as each
+    -- large file's task finishes (any outcome), so it always climbs to M/M and
+    -- never stalls below the total even when a file demotes to stat-only.
+    local composed_files = 0
+
+    -- Counter for the earlier "Summarizing N files in parallel i/T" sub-phase.
+    -- Ticks once per parallel task (large file or small batch) the moment its
+    -- per-chunk / batch summary calls have all returned — before the large-file
+    -- roll-up that drives the composing counter above. Counts every task outcome
+    -- (including pre-chunk demotions) so it always reaches T/T.
+    local summarized_files = 0
+    local function bump_summarized(total)
+      summarized_files = summarized_files + 1
+      picker.show_status(string.format("Summarizing %d files in parallel %d/%d...", total, summarized_files, total))
+    end
 
     local summary_attempts = 0
     local summary_successes = 0
@@ -386,7 +408,7 @@ function M.prepare(diff_data, provider, provider_config, callback)
       return
     end
 
-    picker.show_status(string.format("Summarizing %d files in parallel...", #buckets.large + #batches))
+    picker.show_status(string.format("Summarizing %d files in parallel %d/%d...", total_tasks, 0, total_tasks))
 
     -- ── Large file tasks ─────────────────────────────────────────────
     for idx, entry in ipairs(buckets.large) do
@@ -402,9 +424,23 @@ function M.prepare(diff_data, provider, provider_config, callback)
             return
           end
           task_completed = true
+          composed_files = composed_files + 1
+          picker.show_status(string.format("Composing file summaries %d/%d...", composed_files, #buckets.large))
           done_tasks = done_tasks + 1
           task_done()
           check_done()
+        end
+
+        -- Tick the earlier "Summarizing i/T" counter exactly once for this file,
+        -- the moment its chunk calls have all returned (or it demotes before any
+        -- chunk runs) — i.e. before the roll-up that drives complete_task.
+        local summarized_marked = false
+        local function mark_summarized()
+          if summarized_marked then
+            return
+          end
+          summarized_marked = true
+          bump_summarized(total_tasks)
         end
 
         local chunks = M.chunk_file_capped(local_entry.diff, ld_cfg.chunk_chars, ld_cfg.max_chunks_per_file)
@@ -417,6 +453,7 @@ function M.prepare(diff_data, provider, provider_config, callback)
             is_stat = true,
             stat_line = local_entry.path .. " (diff omitted: exceeded max_chunks_per_file)",
           }
+          mark_summarized()
           complete_task()
           return
         end
@@ -433,6 +470,7 @@ function M.prepare(diff_data, provider, provider_config, callback)
             is_stat = true,
             stat_line = local_entry.path .. " (no hunks)",
           }
+          mark_summarized()
           complete_task()
           return
         end
@@ -451,29 +489,35 @@ function M.prepare(diff_data, provider, provider_config, callback)
                   is_stat = true,
                   stat_line = local_entry.path .. " (summary failed)",
                 }
+                mark_summarized()
                 complete_task()
               end
               return
             end
-            provider:summarize(
-              chunk,
+            local chunk_prompt = prompts.build_chunk_summary_prompt(local_entry.path, chunk)
+            provider:generate_text(
               {
-                prompt_kind = "chunk",
-                file_path = local_entry.path,
+                system = chunk_prompt.system,
+                user = chunk_prompt.user,
                 model = ld_cfg.summary_model,
                 max_tokens = ld_cfg.summary_max_tokens,
                 temperature = ld_cfg.summary_temperature,
+                n = 1,
               },
               provider_config,
-              function(err, summary_text)
-                if err then
+              function(err, texts)
+                local summary_text = texts and texts[1] or ""
+                if err or summary_text == "" then
                   chunk_err_flag = true
                 end
-                chunk_summaries[c_idx_local] = summary_text or ""
+                chunk_summaries[c_idx_local] = summary_text
                 chunks_done = chunks_done + 1
                 chunk_done()
 
                 if chunks_done == #chunks then
+                  -- All chunk calls have returned — the summarizing sub-phase is
+                  -- done for this file (whether or not a chunk failed).
+                  mark_summarized()
                   if chunk_err_flag then
                     large_results[entry_idx] = {
                       path = local_entry.path,
@@ -484,22 +528,23 @@ function M.prepare(diff_data, provider, provider_config, callback)
                     return
                   end
 
-                  -- Roll-up
-                  picker.show_status("Composing file summaries...")
+                  -- Roll-up (progress shown via the N/M counter in complete_task)
                   summary_attempts = summary_attempts + 1
                   local combined = table.concat(chunk_summaries, "\n")
-                  provider:summarize(
-                    combined,
+                  local rollup_prompt = prompts.build_file_rollup_prompt(local_entry.path, combined)
+                  provider:generate_text(
                     {
-                      prompt_kind = "file_rollup",
-                      file_path = local_entry.path,
+                      system = rollup_prompt.system,
+                      user = rollup_prompt.user,
                       model = ld_cfg.summary_model,
                       max_tokens = ld_cfg.summary_max_tokens,
                       temperature = ld_cfg.summary_temperature,
+                      n = 1,
                     },
                     provider_config,
-                    function(rollup_err, rollup_text)
-                      if rollup_err then
+                    function(rollup_err, rollup_texts)
+                      local rollup_text = rollup_texts and rollup_texts[1] or ""
+                      if rollup_err or rollup_text == "" then
                         large_results[entry_idx] = {
                           path = local_entry.path,
                           is_stat = true,
@@ -538,23 +583,29 @@ function M.prepare(diff_data, provider, provider_config, callback)
         local batch_payload = table.concat(parts, "\n---\n")
 
         summary_attempts = summary_attempts + 1
-        provider:summarize(
-          batch_payload,
+        local batch_prompt = prompts.build_small_batch_prompt(batch_payload)
+        provider:generate_text(
           {
-            prompt_kind = "small_batch",
+            system = batch_prompt.system,
+            user = batch_prompt.user,
             model = ld_cfg.summary_model,
             max_tokens = ld_cfg.summary_max_tokens,
             temperature = ld_cfg.summary_temperature,
+            n = 1,
           },
           provider_config,
-          function(err, summary_text)
-            if err then
+          function(err, texts)
+            local summary_text = texts and texts[1] or ""
+            if err or summary_text == "" then
               batch_results[b_idx_local].is_stat = true
             else
               summary_successes = summary_successes + 1
               batch_results[b_idx_local].is_stat = false
               batch_results[b_idx_local].summary = summary_text
             end
+            -- A batch has no roll-up; its single call returning is its summarizing
+            -- sub-phase done. Tick the same "Summarizing i/T" counter.
+            bump_summarized(total_tasks)
             done_tasks = done_tasks + 1
             task_done()
             check_done()
