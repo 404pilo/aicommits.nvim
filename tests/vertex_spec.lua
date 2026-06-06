@@ -447,9 +447,16 @@ describe("vertex provider", function()
       local send_count = 0
       request.send = function(_, cb)
         send_count = send_count + 1
-        cb(nil, { status = 200, body = vim.json.encode({
-          candidates = { { content = { parts = { { text = "ok" } } } } },
-        }), headers = {} })
+        cb(
+          nil,
+          {
+            status = 200,
+            body = vim.json.encode({
+              candidates = { { content = { parts = { { text = "ok" } } } } },
+            }),
+            headers = {},
+          }
+        )
       end
 
       local N = 8

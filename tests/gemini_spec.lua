@@ -378,7 +378,10 @@ describe("gemini-api provider", function()
 
       assert.is_nil(err)
       local body = vim.json.decode(captured.body)
-      assert.is_not_nil(body.generationConfig.thinkingConfig, "thinkingConfig must be set when envelope.thinking_budget is provided")
+      assert.is_not_nil(
+        body.generationConfig.thinkingConfig,
+        "thinkingConfig must be set when envelope.thinking_budget is provided"
+      )
       assert.equals(1000, body.generationConfig.thinkingConfig.thinkingBudget)
 
       request.send = orig_send
@@ -410,7 +413,10 @@ describe("gemini-api provider", function()
 
       assert.is_nil(err)
       local body = vim.json.decode(captured.body)
-      assert.is_nil(body.generationConfig.thinkingConfig, "thinkingConfig must be absent when envelope.thinking_budget is nil")
+      assert.is_nil(
+        body.generationConfig.thinkingConfig,
+        "thinkingConfig must be absent when envelope.thinking_budget is nil"
+      )
 
       request.send = orig_send
     end)

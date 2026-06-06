@@ -1800,7 +1800,7 @@ describe("prepare() integration", function()
       large_diff = {
         mode = "always",
         threshold_chars = 0,
-        chunk_chars = 50,   -- tiny -> many chunks
+        chunk_chars = 50, -- tiny -> many chunks
         max_chunks_per_file = 999,
         small_file_chars = 1,
         max_small_files_inline = 0,
@@ -1813,12 +1813,7 @@ describe("prepare() integration", function()
     })
 
     -- provider_config carries no per-provider override -> policy from global config
-    require("aicommits.input.rich").prepare(
-      { diff = big_diff, files = { "huge.lua" } },
-      provider,
-      {},
-      function() end
-    )
+    require("aicommits.input.rich").prepare({ diff = big_diff, files = { "huge.lua" } }, provider, {}, function() end)
 
     restore()
 
