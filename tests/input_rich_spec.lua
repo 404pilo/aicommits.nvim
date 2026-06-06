@@ -1763,4 +1763,71 @@ describe("prepare() integration", function()
     assert.is_string(captured_envelope.system)
     assert.is_string(captured_envelope.user)
   end)
+
+  it("pre-spawn scheduler is bounded by max_concurrency, not math.huge (F5)", function()
+    -- Regression test: before the fix both schedulers were make_scheduler(math.huge),
+    -- meaning all N chunks dispatched immediately even though the request semaphore
+    -- would throttle them later. That wastes memory / scheduling budget proportional
+    -- to chunk count instead of max_concurrency. After the fix, pre_spawn_bound =
+    -- request.resolve_policy(provider_config).max_concurrency (or 1), so at most
+    -- pre_spawn_bound generate_text calls are in flight before any returns.
+    local restore = stub_stat(" huge.lua | 999 +++\n 1 file changed\n")
+
+    local generate_text_in_flight = 0
+    local generate_text_peak = 0
+    -- Provider that NEVER calls back; we just track concurrent in-flight calls.
+    local provider = {
+      generate_text = function(_self, _envelope, _cfg, _cb)
+        generate_text_in_flight = generate_text_in_flight + 1
+        if generate_text_in_flight > generate_text_peak then
+          generate_text_peak = generate_text_in_flight
+        end
+        -- intentionally never calls _cb -> done() never fires -> scheduler saturates
+      end,
+    }
+
+    -- Build a large diff: many small hunks so chunk_chars=50 splits it into 30+ chunks.
+    -- Each hunk is ~40 chars; 30 hunks = ~1200 chars; chunk_chars=50 -> 30 chunks.
+    local hunks = {}
+    for i = 1, 30 do
+      hunks[#hunks + 1] = "@@ -" .. i .. ",1 +" .. i .. ",1 @@\n-old" .. i .. "\n+new" .. i
+    end
+    local big_diff = "diff --git a/huge.lua b/huge.lua\nindex 1111111..2222222 100644\n--- a/huge.lua\n+++ b/huge.lua\n"
+      .. table.concat(hunks, "\n")
+
+    local config = require("aicommits.config")
+    config.setup({
+      large_diff = {
+        mode = "always",
+        threshold_chars = 0,
+        chunk_chars = 50,   -- tiny -> many chunks
+        max_chunks_per_file = 999,
+        small_file_chars = 1,
+        max_small_files_inline = 0,
+        small_file_batch_chars = 4000,
+        summary_model = nil,
+        summary_max_tokens = 220,
+        summary_temperature = 0.2,
+      },
+      request = { max_concurrency = 4 },
+    })
+
+    -- provider_config carries no per-provider override -> policy from global config
+    require("aicommits.input.rich").prepare(
+      { diff = big_diff, files = { "huge.lua" } },
+      provider,
+      {},
+      function() end
+    )
+
+    restore()
+
+    -- With math.huge, every chunk starts immediately: peak == #chunks (30+).
+    -- With pre_spawn_bound=4, peak == 4.
+    assert.is_true(
+      generate_text_peak <= 4,
+      "peak generate_text calls should be bounded by max_concurrency=4, got " .. generate_text_peak
+    )
+    assert.is_true(generate_text_peak >= 1, "at least one generate_text call must have been dispatched")
+  end)
 end)

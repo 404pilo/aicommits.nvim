@@ -55,8 +55,8 @@ function M:generate_text(envelope, config, callback)
     maxOutputTokens = envelope.max_tokens,
     candidateCount = envelope.n or 1,
   }
-  if config.thinking_budget ~= nil then
-    generation_config.thinkingConfig = { thinkingBudget = config.thinking_budget }
+  if envelope.thinking_budget ~= nil then
+    generation_config.thinkingConfig = { thinkingBudget = envelope.thinking_budget }
   end
 
   local request_body = {

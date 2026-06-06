@@ -347,5 +347,72 @@ describe("gemini-api provider", function()
       assert.is_truthy(err:match("quota"))
       request.send = orig_send
     end)
+
+    it("uses envelope.thinking_budget for thinkingConfig when set (F4)", function()
+      -- thinking_budget must flow through the envelope (set by base.lua from config)
+      -- and gemini.lua must read envelope.thinking_budget, not config.thinking_budget.
+      -- This test passes thinking_budget ONLY via envelope (not in config) to prove
+      -- the envelope path is the one gemini reads.
+      local request = require("aicommits.request")
+      local orig_send = request.send
+      local captured
+      request.send = function(send_opts, cb)
+        captured = send_opts
+        cb(nil, {
+          status = 200,
+          body = vim.json.encode({
+            candidates = { { content = { parts = { { text = "feat: test" } } } } },
+          }),
+          headers = {},
+        })
+      end
+
+      local err, texts
+      require("aicommits.providers.gemini"):generate_text(
+        { system = "S", user = "U", model = "gemini-2.5-flash", n = 1, thinking_budget = 1000 },
+        { api_key = "k", model = "gemini-2.5-flash" },
+        function(e, t)
+          err, texts = e, t
+        end
+      )
+
+      assert.is_nil(err)
+      local body = vim.json.decode(captured.body)
+      assert.is_not_nil(body.generationConfig.thinkingConfig, "thinkingConfig must be set when envelope.thinking_budget is provided")
+      assert.equals(1000, body.generationConfig.thinkingConfig.thinkingBudget)
+
+      request.send = orig_send
+    end)
+
+    it("omits thinkingConfig when envelope.thinking_budget is absent (F4)", function()
+      local request = require("aicommits.request")
+      local orig_send = request.send
+      local captured
+      request.send = function(send_opts, cb)
+        captured = send_opts
+        cb(nil, {
+          status = 200,
+          body = vim.json.encode({
+            candidates = { { content = { parts = { { text = "feat: test" } } } } },
+          }),
+          headers = {},
+        })
+      end
+
+      local err, texts
+      require("aicommits.providers.gemini"):generate_text(
+        { system = "S", user = "U", model = "gemini-2.5-flash", n = 1 },
+        { api_key = "k", model = "gemini-2.5-flash" },
+        function(e, t)
+          err, texts = e, t
+        end
+      )
+
+      assert.is_nil(err)
+      local body = vim.json.decode(captured.body)
+      assert.is_nil(body.generationConfig.thinkingConfig, "thinkingConfig must be absent when envelope.thinking_budget is nil")
+
+      request.send = orig_send
+    end)
   end)
 end)

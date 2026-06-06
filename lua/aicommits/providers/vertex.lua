@@ -11,6 +11,15 @@ local M = base.new({
 M._cached_token = nil
 M._token_expiry = 0
 
+-- Single-flight guard: when the cache is cold and N generate_text tasks call
+-- generate_token concurrently (the unbounded rich.lua scheduler does exactly
+-- this), only the FIRST caller spawns the gcloud subprocess. The rest enqueue
+-- their callbacks here and are all resolved from that one fetch. Without this,
+-- every task sees M._cached_token == nil and spawns its own
+-- `gcloud auth application-default print-access-token` (thundering herd).
+M._token_inflight = false
+M._token_waiters = {}
+
 -- Check if gcloud CLI is installed
 -- @return boolean true if gcloud is available
 local function is_gcloud_available()
@@ -34,6 +43,24 @@ local function generate_token(callback)
       nil
     )
     return
+  end
+
+  -- Single-flight: if a fetch is already running, just wait for it. This is what
+  -- prevents the thundering herd of gcloud subprocesses under the unbounded scheduler.
+  table.insert(M._token_waiters, callback)
+  if M._token_inflight then
+    return
+  end
+  M._token_inflight = true
+
+  -- Drain every queued waiter with the single shared result, then reset the guard.
+  local function resolve(err, token)
+    M._token_inflight = false
+    local waiters = M._token_waiters
+    M._token_waiters = {}
+    for _, cb in ipairs(waiters) do
+      cb(err, token)
+    end
   end
 
   -- Execute gcloud command asynchronously
@@ -62,12 +89,12 @@ local function generate_token(callback)
 
         -- Provide helpful error message
         if error_msg:match("not authenticated") or error_msg:match("credentials") then
-          callback(
+          resolve(
             "gcloud not authenticated. Run one of:\n  gcloud auth application-default login\n  export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json",
             nil
           )
         else
-          callback("Failed to get access token: " .. error_msg, nil)
+          resolve("Failed to get access token: " .. error_msg, nil)
         end
         return
       end
@@ -75,7 +102,7 @@ local function generate_token(callback)
       -- Extract token from stdout
       local token = table.concat(stdout_data, "\n"):gsub("%s+$", "") -- trim whitespace
       if token == "" then
-        callback("Empty token received from gcloud", nil)
+        resolve("Empty token received from gcloud", nil)
         return
       end
 
@@ -83,7 +110,7 @@ local function generate_token(callback)
       M._cached_token = token
       M._token_expiry = os.time() + (55 * 60)
 
-      callback(nil, token)
+      resolve(nil, token)
     end,
   })
 end

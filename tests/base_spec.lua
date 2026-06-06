@@ -74,4 +74,39 @@ describe("base provider", function()
     assert.is_string(err)
     assert.is_nil(messages)
   end)
+
+  it("generic generate_commit_message passes thinking_budget from config into envelope (F4)", function()
+    -- base.lua must include thinking_budget in the envelope so provider's
+    -- generate_text can read it without needing to look into config directly.
+    local captured_envelope
+    local provider = base.new({
+      name = "fake",
+      generate_text = function(_self, envelope, _cfg, cb)
+        captured_envelope = envelope
+        cb(nil, { "feat: thing" })
+      end,
+    })
+
+    provider:generate_commit_message("DIFF", {
+      model = "m",
+      thinking_budget = 512,
+    }, function() end)
+
+    assert.equals(512, captured_envelope.thinking_budget)
+  end)
+
+  it("generic generate_commit_message omits thinking_budget in envelope when not in config (F4)", function()
+    local captured_envelope
+    local provider = base.new({
+      name = "fake",
+      generate_text = function(_self, envelope, _cfg, cb)
+        captured_envelope = envelope
+        cb(nil, { "feat: thing" })
+      end,
+    })
+
+    provider:generate_commit_message("DIFF", { model = "m" }, function() end)
+
+    assert.is_nil(captured_envelope.thinking_budget)
+  end)
 end)

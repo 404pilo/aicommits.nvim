@@ -323,10 +323,14 @@ function M.prepare(diff_data, provider, provider_config, callback)
     local file_entries = M.split_diff_by_file(diff_data.diff)
     local buckets = M.bucket_files(file_entries, ld_cfg)
 
-    -- Concurrency is enforced solely by the request-layer semaphore now, so both
-    -- schedulers are unbounded; the request policy throttles actual HTTP traffic.
-    local sched = M.make_scheduler(math.huge)
-    local chunk_sched = M.make_scheduler(math.huge)
+    -- Pre-spawn bound: cap the scheduler to max_concurrency so we never spin up
+    -- more generate_text tasks than the request semaphore will let through.
+    -- The request layer still enforces the hard concurrency cap; this just avoids
+    -- spawning O(chunks) idle closures when max_concurrency << chunk count.
+    local request = require("aicommits.request")
+    local pre_spawn_bound = request.resolve_policy(provider_config).max_concurrency or 1
+    local sched = M.make_scheduler(pre_spawn_bound)
+    local chunk_sched = M.make_scheduler(pre_spawn_bound)
 
     -- Track results
     local large_results = {} -- { path, summary?, stat_line?, is_stat }

@@ -309,5 +309,181 @@ describe("request policy layer", function()
       assert.equals(2, done)
       assert.is_true(peak <= 1)
     end)
+
+    it("does not leak a slot when http.post throws synchronously (F3)", function()
+      -- First send: http.post raises synchronously (simulates vim.system ENOENT
+      -- when curl is missing). The slot it acquired must be released, and the
+      -- throw must surface as a transport error to the callback -- not propagate
+      -- out of request.send.
+      http.post = function()
+        error("ENOENT: curl not found")
+      end
+      local got1
+      request.send({ url = "x", headers = {}, body = "{}", policy = policy({ max_concurrency = 1 }) }, function(e, r)
+        got1 = { e = e, r = r }
+      end)
+      vim.wait(1000, function()
+        return got1 ~= nil
+      end)
+      assert.is_not_nil(got1, "callback must be invoked, not left hanging")
+      assert.is_not_nil(got1.e, "synchronous throw must surface as an error to cb")
+      assert.is_nil(got1.r)
+
+      -- Second send (same session, max_concurrency=1): if the first leaked its
+      -- slot, in_flight would still be 1 and this request would block forever in
+      -- the waiters queue. With the fix the slot is free, so it runs immediately.
+      http.post = function(_u, _h, _b, _o, cb)
+        cb(nil, { status = 200, body = "ok", headers = {} })
+      end
+      local got2
+      request.send({ url = "y", headers = {}, body = "{}", policy = policy({ max_concurrency = 1 }) }, function(e, r)
+        got2 = { e = e, r = r }
+      end)
+      vim.wait(1000, function()
+        return got2 ~= nil
+      end)
+      assert.is_not_nil(got2, "second request must not be stuck behind a leaked slot")
+      assert.is_nil(got2.e)
+      assert.equals(200, got2.r.status)
+    end)
+
+    it("drains a runnable trailing waiter past a stuck lower-max head (F6)", function()
+      -- Reproduce the FIFO-gate hang: a low-max head waiter must not wedge a
+      -- higher-max waiter behind it that the freed capacity could already run.
+      -- http.post defers its callback so we control completion order precisely.
+      local pending = {}
+      http.post = function(_u, _h, _b, _o, cb)
+        table.insert(pending, cb)
+      end
+
+      local done = {}
+      local function send(tag, max)
+        request.send(
+          { url = tag, headers = {}, body = "{}", policy = policy({ max_concurrency = max, max_retries = 0 }) },
+          function()
+            done[tag] = true
+          end
+        )
+      end
+
+      -- Three sends at max=3 saturate the semaphore: in_flight=3, no waiters.
+      send("a", 3)
+      send("b", 3)
+      send("c", 3)
+      assert.equals(3, #pending, "three should be in flight")
+
+      -- Now a lowered batch enqueues behind them. Head u4 has max=1 (so it needs
+      -- in_flight=0); u5 has max=3 (runnable as soon as in_flight<3). Both queue.
+      send("u4", 1)
+      send("u5", 3)
+      assert.equals(3, #pending, "u4 and u5 must be queued, not in flight")
+
+      -- Complete ONE in-flight request -> in_flight drops 3->2.
+      -- OLD behavior: only head u4 is tested, 2<1 is false, queue wedges; u5 is a
+      -- WASTED SLOT (2<3 is true but never tested) and stays stuck until in_flight=0.
+      -- NEW behavior: scan skips the non-runnable u4 and wakes u5 immediately.
+      local first = table.remove(pending, 1)
+      first()
+
+      assert.is_true(done["a"], "first request should have completed")
+      assert.is_true(
+        done["u5"] == nil and #pending == 3,
+        "u5 should now be in flight (a fresh pending cb), proving the slot was not wasted"
+      )
+
+      -- Drain everything; the whole batch must finish (no silent hang).
+      vim.wait(2000, function()
+        while #pending > 0 do
+          local cb = table.remove(pending, 1)
+          cb()
+        end
+        return done["a"] and done["b"] and done["c"] and done["u4"] and done["u5"]
+      end)
+
+      for _, tag in ipairs({ "a", "b", "c", "u4", "u5" }) do
+        assert.is_true(done[tag], tag .. " never completed -> hang")
+      end
+    end)
+
+    it("does not leak a slot when a queued waiter throws on wake (F3b)", function()
+      -- HOLDER: an in-flight request at max=1 that we complete manually.
+      -- SECOND: queued waiter whose http.post throws synchronously on wake.
+      -- THIRD:  queued waiter that should complete normally after SECOND's slot
+      --         is released.
+      -- Before the fix: waiter.run() at line 72 is a bare call; SECOND's throw
+      --   propagates out of sem_release (called when HOLDER finishes), aborting
+      --   the drain loop and leaving in_flight=1 forever -> THIRD hangs.
+      -- After the fix: run_waiter pcalls waiter.run; decrements in_flight on
+      --   failure; continues the drain; THIRD completes.
+
+      local pending_holder = nil
+      local second_post_count = 0
+      local third_got = nil
+
+      -- Intercept http.post per-URL so we can control each request separately.
+      local post_handlers = {
+        holder = function(_u, _h, _b, _o, cb)
+          -- Defer callback so SECOND and THIRD can be enqueued before HOLDER finishes.
+          pending_holder = cb
+        end,
+        second = function()
+          second_post_count = second_post_count + 1
+          error("ENOENT: curl not found on wake")
+        end,
+        third = function(_u, _h, _b, _o, cb)
+          cb(nil, { status = 200, body = "ok", headers = {} })
+        end,
+      }
+      http.post = function(url, h, b, o, cb)
+        local handler = post_handlers[url]
+        if handler then
+          handler(url, h, b, o, cb)
+        else
+          cb(nil, { status = 200, body = "ok", headers = {} })
+        end
+      end
+
+      local p1 = policy({ max_concurrency = 1, max_retries = 0 })
+      local holder_got, second_got
+
+      -- HOLDER goes in-flight immediately (in_flight=1).
+      local holder_ok, holder_err = pcall(function()
+        request.send({ url = "holder", headers = {}, body = "{}", policy = p1 }, function(e, r)
+          holder_got = { e = e, r = r }
+        end)
+      end)
+
+      -- SECOND and THIRD are enqueued (in_flight=1 = max).
+      local second_ok, second_pcall_err = pcall(function()
+        request.send({ url = "second", headers = {}, body = "{}", policy = p1 }, function(e, r)
+          second_got = { e = e, r = r }
+        end)
+      end)
+
+      request.send({ url = "third", headers = {}, body = "{}", policy = p1 }, function(e, r)
+        third_got = { e = e, r = r }
+      end)
+
+      -- Sanity: HOLDER is in flight, SECOND+THIRD are waiting.
+      assert.is_not_nil(pending_holder, "HOLDER should be in-flight (pending cb)")
+      assert.is_nil(third_got, "THIRD should not have run yet")
+
+      -- Complete HOLDER -> sem_release -> drain wakes SECOND -> SECOND throws.
+      pending_holder(nil, { status = 200, body = "ok", headers = {} })
+
+      -- Wait briefly for synchronous propagation.
+      vim.wait(200, function()
+        return third_got ~= nil
+      end)
+
+      -- SECOND's throw must be surfaced to its callback, not propagate out.
+      assert.is_not_nil(second_got, "SECOND callback must be invoked despite throw")
+      assert.is_not_nil(second_got.e, "SECOND error must be non-nil")
+
+      -- THIRD must have completed: if the slot leaked from SECOND, THIRD hangs.
+      assert.is_not_nil(third_got, "THIRD must complete; slot must not be leaked by SECOND's throw")
+      assert.is_nil(third_got.e)
+      assert.equals(200, third_got.r.status)
+    end)
   end)
 end)

@@ -20,30 +20,72 @@ local sem = {
   waiters = {}, -- FIFO queue of functions waiting for a slot
 }
 
+-- Forward declaration: sem_acquire references sem_release (for release-on-throw),
+-- but sem_release is defined after it. Declaring the local up front makes both
+-- functions close over the SAME upvalue instead of sem_acquire capturing a nil global.
+local sem_release
+
 -- Note: a waiter records the bound it was enqueued under (`max`). Within a single
 -- commit exactly one provider is active and its max_concurrency is constant, so the
 -- enqueue-time bound is always the bound in effect when the waiter wakes. The spec's
 -- "read lazily at each acquire" guarantee applies ACROSS commits (a setup() change
 -- between commits takes effect on the next acquire), not to a waiter already queued
 -- in an in-flight batch. [inferred]
-local function sem_acquire(max_concurrency, on_acquired)
+local function sem_acquire(max_concurrency, on_acquired, on_error)
   if sem.in_flight < max_concurrency then
     sem.in_flight = sem.in_flight + 1
-    on_acquired()
+    -- on_acquired holds the slot. If it throws synchronously (e.g. vim.system
+    -- raises ENOENT when curl is missing) the exception would propagate out of
+    -- here without the slot ever being released, leaking it permanently and
+    -- eventually deadlocking every later request in the waiters queue. Run it
+    -- under pcall and release the slot on a synchronous throw before re-raising,
+    -- so the leak can never happen.
+    local ok, err = pcall(on_acquired)
+    if not ok then
+      sem_release()
+      error(err, 0)
+    end
   else
-    table.insert(sem.waiters, { max = max_concurrency, run = on_acquired })
+    -- on_error is called when the waiter throws on wake (see sem_release drain).
+    -- Passing it through here keeps settle() reachable without closing over globals.
+    table.insert(sem.waiters, { max = max_concurrency, run = on_acquired, on_error = on_error })
   end
 end
 
-local function sem_release()
+function sem_release()
   sem.in_flight = sem.in_flight - 1
-  -- Wake the next waiter if the (possibly changed) bound allows it.
-  if #sem.waiters > 0 then
-    local next_waiter = sem.waiters[1]
-    if sem.in_flight < next_waiter.max then
-      table.remove(sem.waiters, 1)
-      sem.in_flight = sem.in_flight + 1
-      next_waiter.run()
+  -- Drain as many waiters as the freed capacity allows. We scan FIFO and wake the
+  -- FIRST waiter whose enqueue-time bound the current in_flight satisfies, rather
+  -- than testing only the head. If max_concurrency was lowered via setup() while a
+  -- draining batch still has waiters queued, a low-max head (e.g. max=1 with
+  -- in_flight=2) would otherwise fail its head test and wedge the whole FIFO behind
+  -- it -- including higher-max waiters that the freed slot could already run -- with
+  -- no further re-check scheduled, a silent hang. Skipping a non-runnable head to a
+  -- runnable waiter behind it keeps releases propagating; the loop repeats because a
+  -- woken waiter may itself free or take capacity that changes which waiters qualify.
+  local progressed = true
+  while progressed and #sem.waiters > 0 do
+    progressed = false
+    for i, waiter in ipairs(sem.waiters) do
+      if sem.in_flight < waiter.max then
+        table.remove(sem.waiters, i)
+        sem.in_flight = sem.in_flight + 1
+        progressed = true
+        -- pcall-wrapped: if the woken waiter throws synchronously (e.g. http.post
+        -- raises ENOENT), decrement in_flight so the slot is not permanently leaked
+        -- and the drain loop can continue to wake subsequent waiters. Surface the
+        -- error to the waiter's owner via on_error so the request.send callback
+        -- contract is upheld (the outer pcall(attempt,1) has already returned when
+        -- the waiter was originally enqueued, so it cannot catch this throw itself).
+        local run_ok, run_err = pcall(waiter.run)
+        if not run_ok then
+          sem.in_flight = sem.in_flight - 1
+          if waiter.on_error then
+            waiter.on_error(run_err)
+          end
+        end
+        break -- waiter.run() may re-enter (release/acquire); rescan from fresh state
+      end
     end
   end
 end
@@ -96,13 +138,33 @@ function M.send(opts, cb)
   local policy = opts.policy or {}
   local max_attempts = 1 + (policy.max_retries or 0)
 
+  -- Guard against a double callback: the synchronous-throw rescue below must not
+  -- re-invoke cb if cb (or the http.post stub) already fired and then threw.
+  local settled = false
+  local function settle(err, result)
+    if settled then
+      return
+    end
+    settled = true
+    cb(err, result)
+  end
+
   local function attempt(n)
+    -- on_error is passed to sem_acquire so that if this attempt's on_acquired
+    -- throws AFTER being woken from the waiters queue (sem_release drain path),
+    -- the error is still surfaced to the caller via settle rather than being
+    -- silently discarded. In the direct-acquire path the outer pcall(attempt,1)
+    -- below catches the re-raised error instead, so on_error only matters for
+    -- the enqueued-then-woken case.
+    local function on_error(err)
+      settle("HTTP request failed: " .. tostring(err), nil)
+    end
     sem_acquire(policy.max_concurrency or 1, function()
       http.post(opts.url, opts.headers, opts.body, { timeout_ms = policy.timeout_ms }, function(err, result)
         if not is_transient(err, result, policy) or n >= max_attempts then
           -- Terminal: success, non-retryable, or budget exhausted. Release + return.
           sem_release()
-          cb(err, result)
+          settle(err, result)
           return
         end
 
@@ -121,10 +183,18 @@ function M.send(opts, cb)
           attempt(n + 1)
         end)
       end)
-    end)
+    end, on_error)
   end
 
-  attempt(1)
+  -- A synchronous throw inside the slot-holding work (e.g. vim.system raising
+  -- ENOENT when curl is missing) has already released the leaked slot inside
+  -- sem_acquire; here we convert that throw into the normal transport-error
+  -- callback contract (cb(err, nil)) so the failure is surfaced to the provider
+  -- instead of propagating out of request.send and aborting the whole commit.
+  local ok, err = pcall(attempt, 1)
+  if not ok then
+    settle("HTTP request failed: " .. tostring(err), nil)
+  end
 end
 
 return M

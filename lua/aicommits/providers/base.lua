@@ -61,6 +61,7 @@ function M.Provider:generate_commit_message(diff, config, callback)
     top_p = config.top_p,
     frequency_penalty = config.frequency_penalty,
     presence_penalty = config.presence_penalty,
+    thinking_budget = config.thinking_budget,
   }
   self:generate_text(envelope, config, function(err, texts)
     if err then

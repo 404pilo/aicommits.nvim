@@ -414,5 +414,74 @@ describe("vertex provider", function()
 
       request.send = orig_send
     end)
+
+    it("single-flights gcloud token fetch under N concurrent cold-cache calls", function()
+      local vertex_mod = require("aicommits.providers.vertex")
+      -- Cold cache: force the gcloud path.
+      vertex_mod._cached_token = nil
+      vertex_mod._token_expiry = 0
+
+      local orig_jobstart = vim.fn.jobstart
+      local orig_executable = vim.fn.executable
+      vim.fn.executable = function(cmd)
+        if cmd == "gcloud" then
+          return 1
+        end
+        return orig_executable(cmd)
+      end
+
+      -- Count subprocess spawns; capture the on_exit so we can resolve all
+      -- waiters from a single fetch AFTER every concurrent call has been issued.
+      local spawn_count = 0
+      local pending_exit = nil
+      local pending_stdout = nil
+      vim.fn.jobstart = function(_, opts)
+        spawn_count = spawn_count + 1
+        pending_stdout = opts.on_stdout
+        pending_exit = opts.on_exit
+        return 1
+      end
+
+      local request = require("aicommits.request")
+      local orig_send = request.send
+      local send_count = 0
+      request.send = function(_, cb)
+        send_count = send_count + 1
+        cb(nil, { status = 200, body = vim.json.encode({
+          candidates = { { content = { parts = { { text = "ok" } } } } },
+        }), headers = {} })
+      end
+
+      local N = 8
+      local done = 0
+      for _ = 1, N do
+        vertex_mod:generate_text(
+          { system = "S", user = "U", model = "m", n = 1 },
+          { project = "p", location = "us-central1", model = "m" },
+          function()
+            done = done + 1
+          end
+        )
+      end
+
+      -- All N calls issued with a cold cache, yet only ONE gcloud spawn.
+      assert.equals(1, spawn_count)
+
+      -- Resolve the single fetch; every waiter should now proceed to request.send.
+      pending_stdout(nil, { "tok123" })
+      pending_exit(nil, 0)
+
+      vim.wait(1000, function()
+        return done == N
+      end)
+
+      assert.equals(N, done)
+      assert.equals(N, send_count)
+      assert.equals("tok123", vertex_mod._cached_token)
+
+      request.send = orig_send
+      vim.fn.jobstart = orig_jobstart
+      vim.fn.executable = orig_executable
+    end)
   end)
 end)
