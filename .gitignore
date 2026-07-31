@@ -28,7 +28,13 @@ memory-bank/
 # Temporary cleanup files
 .mailmap
 pre-cleanup-*.txt
-.claude
+# Claude Code local state stays local, except the shared PR review system
+# (.claude/pr-flow/ and .claude/skills/reviewing-*/ are version-controlled)
+.claude/*
+!.claude/pr-flow/
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/reviewing-*/
 
 # Agent dispatch scratch (per-run prompts)
 .acpx-prompts/
