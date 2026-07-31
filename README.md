@@ -352,6 +352,7 @@ The plugin uses a provider system to support multiple AI services. Each provider
 - **Vertex AI** - Google Vertex AI Gemini models (enterprise, requires GCP)
 - **Gemini API** - Google AI Studio API (simple API key, free tier available)
 - **Anthropic Claude** - Anthropic's Claude models (simple API key)
+- **Codex** - ChatGPT Codex OAuth session (spends ChatGPT subscription quota, disabled by default; see the risk disclosure below)
 
 #### OpenAI Provider
 
@@ -425,6 +426,46 @@ Vertex AI uses gcloud for authentication. You must have gcloud CLI installed and
    ```
 
 The plugin will automatically call `gcloud auth application-default print-access-token` to obtain OAuth tokens. Tokens are cached for 55 minutes to minimize gcloud calls.
+
+#### Codex Provider (ChatGPT OAuth)
+
+**Prerequisites:**
+
+- The [Codex CLI](https://github.com/openai/codex) installed, with an active `codex login` session.
+- The plugin reads `$CODEX_HOME/auth.json` (defaulting to `~/.codex/auth.json`) to obtain the session's access token and account id. This read is **strictly read-only** — the file is never written, refreshed, or moved by this plugin.
+
+**Configure Codex:**
+```lua
+require("aicommits").setup({
+  active_provider = "codex",
+  providers = {
+    codex = {
+      enabled = true, -- Opt in: disabled by default
+      endpoint = nil, -- API endpoint (nil = ChatGPT Codex backend default)
+      model = "gpt-5.6-terra", -- Known-good models: gpt-5.6-terra, gpt-5.6-luna
+      reasoning_effort = "none", -- none|minimal|low|medium|high|xhigh|max
+      verbosity = "low", -- low|medium|high - the only supported length control
+      max_length = 50, -- Maximum commit message length
+      generate = 1, -- Must be 1; the backend gives no fan-out
+      request = { timeout_ms = 120000 }, -- Reasoning-model latency headroom
+    },
+  },
+})
+```
+
+`verbosity` is the **only** working length control. `temperature`, `top_p`, and `max_tokens` are rejected outright by this backend at any reasoning effort, so no such keys exist in the Codex provider's configuration. `generate` must be `1` — the backend has no fan-out.
+
+**Risk disclosure — read before enabling**
+
+- The endpoint (`https://chatgpt.com/backend-api/codex/responses`) is undocumented and internal to ChatGPT, not a published, supported API.
+- Every request spends your ChatGPT subscription quota, not per-token API credits.
+- OpenAI has not blessed third-party use of this session; this is an unofficial integration.
+- Account-suspension risk is real, if unquantified. Anthropic banned third-party OAuth token reuse in February 2026; OpenAI has not followed suit, but the precedent exists.
+- Business/Enterprise users should check with their workspace admin before enabling this provider.
+
+A sudden run of transport failures may indicate Cloudflare fingerprint blocking of the underlying HTTP client rather than a bug in this plugin.
+
+This provider ships with `enabled = false`. Opting in is a deliberate act.
 
 ### UI Configuration
 
