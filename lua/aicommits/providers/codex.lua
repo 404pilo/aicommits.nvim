@@ -47,11 +47,10 @@ local SESSION_EXPIRED_ERROR = "Codex session expired. Run: `codex login`"
 -- ~/.codex/auth.json). Synchronous, READ-ONLY: never writes, never caches,
 -- never single-flights. A fresh read on every call means a refresh performed
 -- by the Codex CLI behind our back is always picked up.
--- @param config table Provider configuration (unused; kept for interface symmetry)
 -- @return string|nil token The access token, or nil on failure
 -- @return string|nil account_id The ChatGPT account id, or nil on failure
 -- @return string|nil err The user-facing error, or nil on success
-local function _get_access_token(config)
+local function _get_access_token()
   local home = vim.env.CODEX_HOME
   if not home or home == "" then
     home = vim.fn.expand("~/.codex")
@@ -178,7 +177,7 @@ end
 --- @param config table Provider-specific configuration
 --- @param callback function(error, texts) error string or one-element texts array
 function M:generate_text(envelope, config, callback)
-  local token, account_id, auth_err = _get_access_token(config)
+  local token, account_id, auth_err = _get_access_token()
   if auth_err then
     callback(auth_err, nil)
     return
@@ -257,7 +256,7 @@ function M:validate_config(config)
     table.insert(errors, "verbosity must be one of: low, medium, high")
   end
 
-  local _token, _account_id, auth_err = _get_access_token(config)
+  local _token, _account_id, auth_err = _get_access_token()
   if auth_err then
     table.insert(errors, auth_err)
   end
@@ -271,7 +270,7 @@ end
 --- @param config table Provider configuration
 --- @return table headers HTTP headers
 function M:get_auth_headers(config)
-  local token, account_id, _err = _get_access_token(config)
+  local token, account_id, _err = _get_access_token()
   return _build_headers(token or "", account_id or "")
 end
 

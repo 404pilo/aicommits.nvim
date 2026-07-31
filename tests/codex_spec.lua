@@ -1,4 +1,6 @@
 -- Unit tests for the Codex (ChatGPT OAuth) provider
+local mock = require("tests.helpers.mock")
+
 local SENTINEL = "SENTINEL-ACCESS-TOKEN-DO-NOT-LEAK"
 
 local VALID_AUTH_JSON = '{"auth_mode":"chatgpt","OPENAI_API_KEY":null,"tokens":{"id_token":"test-id-token",'
@@ -13,7 +15,7 @@ describe("codex provider", function()
   local orig_send
   local captured
   local tmp
-  local saved_home
+  local cleanup_env
 
   local function _write_auth(json_string)
     vim.fn.writefile({ json_string }, tmp .. "/auth.json")
@@ -40,8 +42,7 @@ describe("codex provider", function()
 
     tmp = vim.fn.tempname()
     vim.fn.mkdir(tmp, "p")
-    saved_home = vim.env.CODEX_HOME
-    vim.env.CODEX_HOME = tmp
+    cleanup_env = mock.mock_env({ CODEX_HOME = tmp })
     _write_auth(VALID_AUTH_JSON)
 
     request = require("aicommits.request")
@@ -52,7 +53,7 @@ describe("codex provider", function()
 
   after_each(function()
     request.send = orig_send
-    vim.env.CODEX_HOME = saved_home
+    cleanup_env()
     vim.fn.delete(tmp, "rf")
   end)
 
@@ -304,16 +305,17 @@ describe("codex provider", function()
   end)
 
   describe("HTTP failures", function()
-    it("maps 401 to the session-expired message", function()
+    it("maps 401 to the session-expired message, never leaking the token", function()
       _stub(401, "")
       local err
       codex:generate_text({ system = "S", user = "U" }, {}, function(e, _)
         err = e
       end)
       assert.equals("Codex session expired. Run: `codex login`", err)
+      assert.is_nil(err:find(SENTINEL, 1, true))
     end)
 
-    it("surfaces a flat 400 detail verbatim, framed as unsupported", function()
+    it("surfaces a flat 400 detail verbatim, framed as unsupported, never leaking the token", function()
       _stub(400, vim.json.encode({ detail = "Unsupported parameter: temperature" }))
       local err
       codex:generate_text({ system = "S", user = "U" }, {}, function(e, _)
@@ -321,24 +323,27 @@ describe("codex provider", function()
       end)
       assert.is_truthy(err:find("Unsupported parameter: temperature", 1, true))
       assert.is_truthy(err:find("parameter not supported by the ChatGPT Codex backend", 1, true))
+      assert.is_nil(err:find(SENTINEL, 1, true))
     end)
 
-    it("surfaces a rich 400 error.message", function()
+    it("surfaces a rich 400 error.message, never leaking the token", function()
       _stub(400, vim.json.encode({ error = { message = "bad value" } }))
       local err
       codex:generate_text({ system = "S", user = "U" }, {}, function(e, _)
         err = e
       end)
       assert.equals("Codex API Error: bad value", err)
+      assert.is_nil(err:find(SENTINEL, 1, true))
     end)
 
-    it("surfaces exactly the HTTP-status form for an undecodable body, without echoing it", function()
+    it("surfaces exactly the HTTP-status form for an undecodable body, without echoing it or the token", function()
       _stub(400, "not json at all: <script>super-secret-body-content</script>")
       local err
       codex:generate_text({ system = "S", user = "U" }, {}, function(e, _)
         err = e
       end)
       assert.equals("Codex API Error (HTTP 400)", err)
+      assert.is_nil(err:find(SENTINEL, 1, true))
     end)
 
     it("passes a transport error through verbatim", function()
@@ -352,7 +357,7 @@ describe("codex provider", function()
       assert.equals("connection reset", err)
     end)
 
-    it("returns the generic message when 200 but no response.completed arrived", function()
+    it("returns the generic message when 200 but no response.completed arrived, never leaking the token", function()
       _stub(200, _sse({ { type = "response.output_text.delta", delta = "feat: x" } }))
       local err, texts
       codex:generate_text({ system = "S", user = "U" }, {}, function(e, t)
@@ -360,6 +365,7 @@ describe("codex provider", function()
       end)
       assert.equals("No commit messages were generated. Try again.", err)
       assert.is_nil(texts)
+      assert.is_nil(err:find(SENTINEL, 1, true))
     end)
 
     it("returns the generic message when completed but deltas are whitespace-only", function()
@@ -481,56 +487,6 @@ describe("codex provider", function()
   end)
 
   describe("security", function()
-    local function assert_no_leak(err)
-      assert.is_string(err)
-      assert.is_nil(err:find(SENTINEL, 1, true))
-    end
-
-    it("never leaks the access token on a 401", function()
-      _stub(401, "")
-      local err
-      codex:generate_text({ system = "S", user = "U" }, {}, function(e, _)
-        err = e
-      end)
-      assert_no_leak(err)
-    end)
-
-    it("never leaks the access token on a flat 400", function()
-      _stub(400, vim.json.encode({ detail = "Unsupported parameter: temperature" }))
-      local err
-      codex:generate_text({ system = "S", user = "U" }, {}, function(e, _)
-        err = e
-      end)
-      assert_no_leak(err)
-    end)
-
-    it("never leaks the access token on a rich 400", function()
-      _stub(400, vim.json.encode({ error = { message = "bad value" } }))
-      local err
-      codex:generate_text({ system = "S", user = "U" }, {}, function(e, _)
-        err = e
-      end)
-      assert_no_leak(err)
-    end)
-
-    it("never leaks the access token on an undecodable body", function()
-      _stub(400, "garbage")
-      local err
-      codex:generate_text({ system = "S", user = "U" }, {}, function(e, _)
-        err = e
-      end)
-      assert_no_leak(err)
-    end)
-
-    it("never leaks the access token when no response.completed arrived", function()
-      _stub(200, _sse({ { type = "response.output_text.delta", delta = "feat: x" } }))
-      local err
-      codex:generate_text({ system = "S", user = "U" }, {}, function(e, _)
-        err = e
-      end)
-      assert_no_leak(err)
-    end)
-
     it("get_auth_headers never raises when auth.json is missing, and returns a safe placeholder", function()
       vim.fn.delete(tmp .. "/auth.json")
       local headers

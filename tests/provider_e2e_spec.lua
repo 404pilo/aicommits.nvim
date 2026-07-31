@@ -1,5 +1,7 @@
 -- End-to-end tests for the provider system
 -- These tests capture the manual verification phases for the provider refactoring
+local mock = require("tests.helpers.mock")
+
 describe("provider system E2E", function()
   local aicommits
   local config
@@ -587,7 +589,7 @@ describe("provider system E2E", function()
 
   describe("Phase 12: Codex provider integration", function()
     local tmp
-    local saved_home
+    local cleanup_env
 
     before_each(function()
       -- Clear package cache
@@ -599,8 +601,7 @@ describe("provider system E2E", function()
       -- session and fail in CI (or vice versa) -- never read the real ~/.codex.
       tmp = vim.fn.tempname()
       vim.fn.mkdir(tmp, "p")
-      saved_home = vim.env.CODEX_HOME
-      vim.env.CODEX_HOME = tmp
+      cleanup_env = mock.mock_env({ CODEX_HOME = tmp })
       vim.fn.writefile({
         '{"auth_mode":"chatgpt","tokens":{"access_token":"test-access-token","account_id":"test-account-id"}}',
       }, tmp .. "/auth.json")
@@ -609,7 +610,7 @@ describe("provider system E2E", function()
     end)
 
     after_each(function()
-      vim.env.CODEX_HOME = saved_home
+      cleanup_env()
       vim.fn.delete(tmp, "rf")
     end)
 
