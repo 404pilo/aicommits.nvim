@@ -7,6 +7,22 @@ local M = base.new({
   name = "openai",
 })
 
+-- Public Chat Completions API values for reasoning_effort/verbosity. These differ from
+-- codex.lua's enums (that backend accepts minimal/max; the public API 400s on them).
+local VALID_REASONING_EFFORTS = {
+  none = true,
+  low = true,
+  medium = true,
+  high = true,
+  xhigh = true,
+}
+
+local VALID_VERBOSITIES = {
+  low = true,
+  medium = true,
+  high = true,
+}
+
 -- Get OpenAI API key from configuration or environment variables
 -- Priority: config.api_key > AICOMMITS_NVIM_OPENAI_API_KEY > OPENAI_API_KEY
 -- @param config table Provider configuration
@@ -111,11 +127,30 @@ function M:generate_text(envelope, config, callback)
       return
     end
 
+    -- At high reasoning effort the model can nondeterministically burn the whole
+    -- token budget on reasoning and return HTTP 200 with empty content and
+    -- finish_reason "length"; surface that distinctly from "no choices at all".
     local texts = {}
+    local saw_length_truncation = false
     for _, choice in ipairs(response.choices) do
-      if choice.message and choice.message.content then
-        table.insert(texts, choice.message.content)
+      local content = choice.message and choice.message.content
+      if type(content) == "string" and content:match("%S") then
+        table.insert(texts, content)
+      elseif choice.finish_reason == "length" then
+        saw_length_truncation = true
       end
+    end
+
+    if #texts == 0 then
+      if saw_length_truncation then
+        callback(
+          "Response truncated: reasoning consumed the token budget. Increase max_tokens or lower reasoning_effort.",
+          nil
+        )
+      else
+        callback("No commit messages were generated. Try again.", nil)
+      end
+      return
     end
 
     callback(nil, texts)
@@ -145,19 +180,12 @@ function M:validate_config(config)
   end
 
   -- Validate reasoning_effort (only used for gpt-5-family reasoning models)
-  if
-    config.reasoning_effort ~= nil and (type(config.reasoning_effort) ~= "string" or config.reasoning_effort == "")
-  then
-    table.insert(errors, "reasoning_effort must be a non-empty string")
+  if config.reasoning_effort ~= nil and not VALID_REASONING_EFFORTS[config.reasoning_effort] then
+    table.insert(errors, "reasoning_effort must be one of: none, low, medium, high, xhigh")
   end
 
   -- Validate verbosity (only used for gpt-5-family reasoning models)
-  if
-    config.verbosity ~= nil
-    and config.verbosity ~= "low"
-    and config.verbosity ~= "medium"
-    and config.verbosity ~= "high"
-  then
+  if config.verbosity ~= nil and not VALID_VERBOSITIES[config.verbosity] then
     table.insert(errors, "verbosity must be one of: low, medium, high")
   end
 

@@ -25,7 +25,10 @@ M.defaults = {
       model = "gpt-5.6-luna", -- OpenAI model to use
       max_length = 50, -- Maximum commit message length
       generate = 1, -- Number of commit message options to generate (1-5)
-      reasoning_effort = nil, -- Only used for gpt-5-family reasoning models (e.g. gpt-5.6-luna). e.g. none|low|medium|high
+      -- Only used for gpt-5-family reasoning models (e.g. gpt-5.6-luna). Public Chat
+      -- Completions API values: none|low|medium|high|xhigh (nil = let the API pick its
+      -- own default). Do not reuse codex's minimal/max here; the public API rejects them.
+      reasoning_effort = nil,
       verbosity = nil, -- Only used for gpt-5-family reasoning models: low|medium|high
       -- Advanced OpenAI options
       temperature = 0.7, -- Sampling temperature (0-2)
@@ -33,6 +36,7 @@ M.defaults = {
       frequency_penalty = 0, -- Frequency penalty (-2 to 2)
       presence_penalty = 0, -- Presence penalty (-2 to 2)
       max_tokens = 200, -- Maximum tokens in response
+      request = { timeout_ms = 120000 }, -- Reasoning-model latency headroom
     },
     -- Google Vertex AI Configuration
     -- Requires gcloud CLI: https://cloud.google.com/sdk/install

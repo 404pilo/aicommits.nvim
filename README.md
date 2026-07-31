@@ -268,7 +268,7 @@ require("aicommits").setup({
       model = "gpt-5.6-luna",  -- Which model to use (gpt-5-family/o-series models are treated as reasoning models)
       max_length = 50,         -- Max characters in commit message
       generate = 1,            -- Number of options (1-5)
-      reasoning_effort = nil,  -- Reasoning models only: none|low|medium|high
+      reasoning_effort = nil,  -- Reasoning models only (public API): none|low|medium|high|xhigh
       verbosity = nil,         -- Reasoning models only: low|medium|high
       -- Advanced options (ignored for reasoning models; see note below)
       temperature = 0.7,       -- Sampling temperature (0-2)
@@ -372,7 +372,7 @@ require("aicommits").setup({
 })
 ```
 
-`reasoning_effort` (e.g. `none`/`low`/`medium`/`high`) and `verbosity` (`low`/`medium`/`high`) are optional and only take effect for gpt-5-family/o-series reasoning models like `gpt-5.6-luna`. For these models, `temperature`, `top_p`, `frequency_penalty`, and `presence_penalty` are ignored (fixed by the API), and `max_tokens` is sent as `max_completion_tokens` instead. Classic models like `gpt-4.1-nano` are unaffected and keep using all of the advanced options above.
+`reasoning_effort` (`none`/`low`/`medium`/`high`/`xhigh`) and `verbosity` (`low`/`medium`/`high`) are optional and only take effect for gpt-5-family/o-series reasoning models like `gpt-5.6-luna`. For these models, `temperature`, `top_p`, `frequency_penalty`, and `presence_penalty` are ignored (fixed by the API), and `max_tokens` is sent as `max_completion_tokens` instead. Classic models like `gpt-4.1-nano` are unaffected and keep using all of the advanced options above. Note this is a different enum than the Codex provider below (`minimal`/`max` are Codex-only and are rejected by the public API).
 
 **Use a custom OpenAI-compatible endpoint:**
 ```lua

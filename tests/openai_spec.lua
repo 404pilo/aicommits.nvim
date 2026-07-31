@@ -179,6 +179,66 @@ describe("openai provider", function()
 
       request.send = orig_send
     end)
+
+    it("surfaces an actionable error when reasoning consumes the whole token budget", function()
+      local request = require("aicommits.request")
+      local orig_send = request.send
+      request.send = function(_o, cb)
+        cb(nil, {
+          status = 200,
+          body = vim.json.encode({
+            choices = { { message = { content = "" }, finish_reason = "length" } },
+          }),
+          headers = {},
+        })
+      end
+
+      local err, texts
+      require("aicommits.providers.openai"):generate_text(
+        { system = "S", user = "U", model = "gpt-5.6-luna", max_tokens = 200 },
+        { api_key = "k", model = "gpt-5.6-luna", reasoning_effort = "xhigh" },
+        function(e, t)
+          err, texts = e, t
+        end
+      )
+
+      assert.is_nil(texts)
+      assert.is_string(err)
+      assert.is_truthy(err:match("Response truncated"))
+
+      request.send = orig_send
+    end)
+
+    it("filters out empty/whitespace-only choices while keeping non-empty ones", function()
+      local request = require("aicommits.request")
+      local orig_send = request.send
+      request.send = function(_o, cb)
+        cb(nil, {
+          status = 200,
+          body = vim.json.encode({
+            choices = {
+              { message = { content = "  " }, finish_reason = "stop" },
+              { message = { content = "real message" }, finish_reason = "stop" },
+            },
+          }),
+          headers = {},
+        })
+      end
+
+      local err, texts
+      require("aicommits.providers.openai"):generate_text(
+        { system = "S", user = "U" },
+        { api_key = "k" },
+        function(e, t)
+          err, texts = e, t
+        end
+      )
+
+      assert.is_nil(err)
+      assert.same({ "real message" }, texts)
+
+      request.send = orig_send
+    end)
   end)
 
   describe("validate_config()", function()
@@ -192,6 +252,22 @@ describe("openai provider", function()
       local ok, errors = openai:validate_config({ api_key = "k", model = "gpt-5.6-luna", reasoning_effort = "medium" })
       assert.is_true(ok)
       assert.same({}, errors)
+    end)
+
+    it("rejects codex-only reasoning_effort values (minimal, max)", function()
+      for _, value in ipairs({ "minimal", "max" }) do
+        local ok, errors = openai:validate_config({ api_key = "k", model = "gpt-5.6-luna", reasoning_effort = value })
+        assert.is_false(ok)
+        assert.is_truthy(vim.tbl_contains(errors, "reasoning_effort must be one of: none, low, medium, high, xhigh"))
+      end
+    end)
+
+    it("accepts all valid public-API reasoning_effort values", function()
+      for _, value in ipairs({ "none", "low", "medium", "high", "xhigh" }) do
+        local ok, errors = openai:validate_config({ api_key = "k", model = "gpt-5.6-luna", reasoning_effort = value })
+        assert.is_true(ok)
+        assert.same({}, errors)
+      end
     end)
   end)
 end)
