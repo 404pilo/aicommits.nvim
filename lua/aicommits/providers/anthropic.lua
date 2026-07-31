@@ -48,7 +48,7 @@ function M:generate_text(envelope, config, callback)
 
   local request_body = {
     model = envelope.model or config.model or "claude-3-5-haiku-20241022",
-    max_tokens = envelope.max_tokens or config.max_tokens or 200,
+    max_tokens = envelope.max_tokens or 200,
     temperature = envelope.temperature,
     top_p = envelope.top_p,
     system = envelope.system,
