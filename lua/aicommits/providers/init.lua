@@ -113,11 +113,13 @@ function M.setup()
     vim.notify("Failed to load Gemini API provider: " .. tostring(gemini_provider), vim.log.levels.ERROR)
   end
 
-  -- Future: Register additional built-in providers
-  -- local ok, anthropic_provider = pcall(require, "aicommits.providers.anthropic")
-  -- if ok then
-  --   M.register("anthropic", anthropic_provider)
-  -- end
+  -- Register Anthropic Claude provider
+  local ok_anthropic, anthropic_provider = pcall(require, "aicommits.providers.anthropic")
+  if ok_anthropic then
+    M.register("anthropic", anthropic_provider)
+  else
+    vim.notify("Failed to load Anthropic provider: " .. tostring(anthropic_provider), vim.log.levels.ERROR)
+  end
 end
 
 return M

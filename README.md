@@ -19,6 +19,7 @@ This plugin generates conventional commit messages using AI. Stage your changes,
 - curl
 - **For OpenAI**: API key
 - **For Vertex AI**: gcloud CLI + authentication (user credentials or service account)
+- **For Anthropic Claude**: API key
 
 ## Installation
 
@@ -191,6 +192,42 @@ require("aicommits").setup({
 
 **Note:** This provider uses the `generativelanguage.googleapis.com` API endpoint, which is completely separate from Vertex AI. No Google Cloud project or gcloud CLI required!
 
+### Anthropic Claude
+
+**Prerequisites:**
+- Get API key from: https://console.anthropic.com
+
+**Authentication Setup:**
+
+Set your Anthropic API key:
+
+```bash
+export AICOMMITS_NVIM_ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+Or use the standard Anthropic environment variable:
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+**Configure in your Neovim setup:**
+
+```lua
+require("aicommits").setup({
+  active_provider = "anthropic",
+  providers = {
+    anthropic = {
+      enabled = true,
+      model = "claude-haiku-4-5",
+      max_length = 50,
+      temperature = 0.7,
+      max_tokens = 200,
+    },
+  },
+})
+```
+
 ## Usage
 
 ```bash
@@ -265,8 +302,17 @@ require("aicommits").setup({
       max_tokens = 200,        -- Maximum tokens in response
       thinking_budget = 0,     -- Thinking budget: 0 = disabled (default, faster/cheaper), -1 = dynamic, 1-24576 = manual
     },
+    -- Anthropic Claude Configuration
+    -- Get API key from: https://console.anthropic.com
+    anthropic = {
+      enabled = false,         -- Enable/disable this provider
+      api_key = nil,          -- API key (nil = use environment variables)
+      model = "claude-haiku-4-5", -- Claude model to use
+      max_length = 50,         -- Max characters in commit message
+      temperature = 0.7,       -- Sampling temperature (0-1)
+      max_tokens = 200,        -- Maximum tokens in response
+    },
     -- Future providers can be added here
-    -- anthropic = { ... },
     -- ollama = { ... },
   },
 
@@ -305,6 +351,7 @@ The plugin uses a provider system to support multiple AI services. Each provider
 - **OpenAI** - OpenAI GPT models (default)
 - **Vertex AI** - Google Vertex AI Gemini models (enterprise, requires GCP)
 - **Gemini API** - Google AI Studio API (simple API key, free tier available)
+- **Anthropic Claude** - Anthropic's Claude models (simple API key)
 
 #### OpenAI Provider
 
