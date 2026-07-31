@@ -60,13 +60,16 @@ M.defaults = {
       max_tokens = 200, -- Maximum tokens in response
       thinking_budget = 0, -- Thinking budget (0 = disabled, -1 = dynamic, 1-24576 = manual). Set to 0 by default for lower cost/latency
     },
-    -- Future providers can be added here:
-    -- anthropic = {
-    --   enabled = false,
-    --   api_key = nil,
-    --   model = "claude-3-5-sonnet-20241022",
-    --   max_tokens = 200,
-    -- },
+    -- Anthropic Claude Configuration
+    -- Get API key from: https://console.anthropic.com
+    anthropic = {
+      enabled = false, -- Enable/disable this provider (disabled by default)
+      api_key = nil, -- API key (nil = use environment variables AICOMMITS_NVIM_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY)
+      model = "claude-3-5-haiku-20241022", -- Claude model to use
+      max_length = 50, -- Maximum commit message length
+      temperature = 0.7, -- Sampling temperature (0-1)
+      max_tokens = 200, -- Maximum tokens in response
+    },
   },
 
   -- UI Configuration

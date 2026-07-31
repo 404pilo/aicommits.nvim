@@ -1,80 +1,160 @@
-local M = {}
+-- Anthropic Claude provider implementation for aicommits.nvim
+local base = require("aicommits.providers.base")
+local request = require("aicommits.request")
 
--- Import base provider to inherit from
-local BaseProvider = require("aicommits.providers.base")
-setmetatable(M, { __index = BaseProvider })
-M.__index = M
+-- Create Anthropic provider instance
+local M = base.new({
+  name = "anthropic",
+})
 
---- Anthropic provider for commit message generation
---- @class AnthropicProvider
-function M.new()
-  local self = setmetatable({}, M)
-  return self
-end
-
---- Generate a commit message using Anthropic's Claude API
---- @param diff string The git diff
---- @param config table The provider configuration
---- @param callback function The callback for the result
-function M:generate_commit_message(diff, config, callback)
-  local api_key = config.api_key or os.getenv("ANTHROPIC_API_KEY")
-  if not api_key then
-    return callback("Anthropic API key not found. Please set it in config or ANTHROPIC_API_KEY env var.")
+-- Get Anthropic API key from configuration or environment variables
+-- Priority: config.api_key > AICOMMITS_NVIM_ANTHROPIC_API_KEY > ANTHROPIC_API_KEY
+-- @param config table Provider configuration
+-- @return string|nil api_key The API key or nil if not found
+local function get_api_key(config)
+  -- Check config first
+  if config.api_key and config.api_key ~= "" then
+    return config.api_key
   end
 
-  local payload = {
-    model = config.model or "claude-3-5-haiku-20241022",
-    max_tokens = config.max_tokens or 200,
-    temperature = config.temperature or 0.7,
-    system = "You are an expert software engineer. Generate a concise, professional conventional commit message based on the provided git diff. Return ONLY the commit message, no explanation.",
+  -- Check plugin-specific env var
+  local key = vim.env.AICOMMITS_NVIM_ANTHROPIC_API_KEY
+  if key and key ~= "" then
+    return key
+  end
+
+  -- Check generic Anthropic env var
+  key = vim.env.ANTHROPIC_API_KEY
+  if key and key ~= "" then
+    return key
+  end
+
+  return nil
+end
+
+-- Provider-agnostic transport for Anthropic's Messages API.
+-- @param envelope table { system, user, model, max_tokens, temperature, top_p }
+-- @param config   table Provider configuration
+-- @param callback function(error, texts)
+function M:generate_text(envelope, config, callback)
+  local api_key = get_api_key(config)
+  if not api_key then
+    callback(
+      "Anthropic API key not found. Set 'providers.anthropic.api_key' in config or environment variable AICOMMITS_NVIM_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY",
+      nil
+    )
+    return
+  end
+
+  local request_body = {
+    model = envelope.model or config.model or "claude-3-5-haiku-20241022",
+    max_tokens = envelope.max_tokens or config.max_tokens or 200,
+    temperature = envelope.temperature,
+    top_p = envelope.top_p,
+    system = envelope.system,
     messages = {
-      { role = "user", content = "Generate a commit message for these changes:\n\n" .. diff },
+      { role = "user", content = envelope.user },
     },
   }
 
-  local request = {
+  request.send({
     url = "https://api.anthropic.com/v1/messages",
-    headers = {
-      ["x-api-key"] = api_key,
-      ["anthropic-version"] = "2023-06-01",
-      ["content-type"] = "application/json",
-    },
-    body = vim.fn.json_encode(payload),
-    method = "POST",
-  }
-
-  -- Use the shared HTTP helper
-  local http = require("aicommits.http")
-  http.request(request, function(err, response)
+    headers = self:get_auth_headers(config),
+    body = vim.json.encode(request_body),
+    policy = request.resolve_policy(config),
+  }, function(err, result)
     if err then
-      return callback(err)
+      callback(err, nil)
+      return
     end
 
-    local ok, data = pcall(vim.fn.json_decode, response)
+    local ok, response = pcall(vim.json.decode, result.body)
     if not ok then
-      return callback("Failed to decode Anthropic API response")
+      callback("Failed to parse Anthropic API response: " .. tostring(response), nil)
+      return
     end
 
-    if data.error then
-      return callback("Anthropic API error: " .. (data.error.message or "Unknown error"))
+    if response.error then
+      callback("Anthropic API Error: " .. (response.error.message or vim.inspect(response.error)), nil)
+      return
     end
 
-    local content = data.content
-    if type(content) == "table" and content[1] and content[1].text then
-      callback(nil, content[1].text)
-    else
-      callback("Unexpected response format from Anthropic API")
+    if not response.content or #response.content == 0 then
+      callback("No commit messages were generated. Try again.", nil)
+      return
     end
+
+    local texts = {}
+    for _, block in ipairs(response.content) do
+      if block.type == "text" and block.text and block.text ~= "" then
+        table.insert(texts, block.text)
+      end
+    end
+
+    callback(nil, texts)
   end)
 end
 
---- Health check for the Anthropic provider
-function M.health_check(config)
-  local api_key = config.api_key or os.getenv("ANTHROPIC_API_KEY")
-  if not api_key then
-    return false, "Missing API key (ANTHROPIC_API_KEY)"
+-- Validate Anthropic provider configuration
+-- @param config table Provider configuration
+-- @return boolean valid True if configuration is valid
+-- @return table errors Array of error messages (empty if valid)
+function M:validate_config(config)
+  local errors = {}
+
+  -- Validate model
+  if not config.model or config.model == "" then
+    table.insert(errors, "model is required and must be a non-empty string")
   end
-  return true, "Anthropic configured"
+
+  -- Validate max_length
+  if config.max_length and (type(config.max_length) ~= "number" or config.max_length <= 0) then
+    table.insert(errors, "max_length must be a positive number")
+  end
+
+  -- Validate temperature (Claude accepts 0-1)
+  if
+    config.temperature and (type(config.temperature) ~= "number" or config.temperature < 0 or config.temperature > 1)
+  then
+    table.insert(errors, "temperature must be a number between 0 and 1")
+  end
+
+  -- Validate max_tokens
+  if config.max_tokens and (type(config.max_tokens) ~= "number" or config.max_tokens <= 0) then
+    table.insert(errors, "max_tokens must be a positive number")
+  end
+
+  -- Validate API key availability
+  if not get_api_key(config) then
+    table.insert(
+      errors,
+      "API key not found. Set 'providers.anthropic.api_key' in config or environment variable AICOMMITS_NVIM_ANTHROPIC_API_KEY or ANTHROPIC_API_KEY"
+    )
+  end
+
+  return #errors == 0, errors
+end
+
+-- Get authentication headers for Anthropic's API
+-- @param config table Provider configuration
+-- @return table headers HTTP headers with x-api-key and anthropic-version
+function M:get_auth_headers(config)
+  local api_key = get_api_key(config)
+  return {
+    ["x-api-key"] = api_key or "",
+    ["anthropic-version"] = "2023-06-01",
+    ["content-type"] = "application/json",
+  }
+end
+
+-- Get Anthropic provider capabilities
+-- @return table capabilities Provider feature support
+function M:get_capabilities()
+  return {
+    supports_streaming = false, -- Not implemented yet
+    supports_multiple_generations = false, -- Messages API does not support an "n" parameter
+    max_generations = 1,
+  }
 end
 
 return M
