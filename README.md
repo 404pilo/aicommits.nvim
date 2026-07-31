@@ -41,7 +41,7 @@ With custom config:
     require("aicommits").setup({
       providers = {
         openai = {
-          model = "gpt-4.1-nano",
+          model = "gpt-5.6-luna",
           max_length = 72,
           generate = 3,
         },
@@ -265,10 +265,12 @@ require("aicommits").setup({
       enabled = true,          -- Enable/disable this provider
       api_key = nil,           -- API key (nil = use environment variables)
       endpoint = nil,          -- Custom endpoint (nil = use default)
-      model = "gpt-4.1-nano",  -- Which model to use
+      model = "gpt-5.6-luna",  -- Which model to use (gpt-5-family/o-series models are treated as reasoning models)
       max_length = 50,         -- Max characters in commit message
       generate = 1,            -- Number of options (1-5)
-      -- Advanced options
+      reasoning_effort = nil,  -- Reasoning models only: none|low|medium|high
+      verbosity = nil,         -- Reasoning models only: low|medium|high
+      -- Advanced options (ignored for reasoning models; see note below)
       temperature = 0.7,       -- Sampling temperature (0-2)
       top_p = 1,              -- Nucleus sampling parameter
       frequency_penalty = 0,   -- Frequency penalty (-2 to 2)
@@ -362,13 +364,15 @@ require("aicommits").setup({
   active_provider = "openai",
   providers = {
     openai = {
-      model = "gpt-4.1-nano",      -- Use a different model
+      model = "gpt-5.6-luna",      -- Use a different model
       max_length = 72,      -- Longer commit messages
       generate = 3,         -- Generate 3 options to choose from
     },
   },
 })
 ```
+
+`reasoning_effort` (e.g. `none`/`low`/`medium`/`high`) and `verbosity` (`low`/`medium`/`high`) are optional and only take effect for gpt-5-family/o-series reasoning models like `gpt-5.6-luna`. For these models, `temperature`, `top_p`, `frequency_penalty`, and `presence_penalty` are ignored (fixed by the API), and `max_tokens` is sent as `max_completion_tokens` instead. Classic models like `gpt-4.1-nano` are unaffected and keep using all of the advanced options above.
 
 **Use a custom OpenAI-compatible endpoint:**
 ```lua

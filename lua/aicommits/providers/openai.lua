@@ -32,6 +32,13 @@ local function get_api_key(config)
   return nil
 end
 
+-- Detect GPT-5-family/o-series reasoning models (e.g. gpt-5.6-luna, o1, o3-mini).
+-- @param model string Model name
+-- @return boolean
+local function is_reasoning_model(model)
+  return type(model) == "string" and (model:match("^gpt%-5") ~= nil or model:match("^o%d") ~= nil)
+end
+
 -- Provider-agnostic transport for OpenAI chat-completions.
 -- @param envelope table { system, user, model, max_tokens, temperature, n, top_p, frequency_penalty, presence_penalty }
 -- @param config   table Provider configuration
@@ -47,21 +54,35 @@ function M:generate_text(envelope, config, callback)
   end
 
   local endpoint = config.endpoint or "https://api.openai.com/v1/chat/completions"
+  local model = envelope.model or config.model or "gpt-4.1-nano"
 
   local request_body = {
-    model = envelope.model or config.model or "gpt-4.1-nano",
+    model = model,
     messages = {
       { role = "system", content = envelope.system },
       { role = "user", content = envelope.user },
     },
-    temperature = envelope.temperature,
-    top_p = envelope.top_p,
-    frequency_penalty = envelope.frequency_penalty,
-    presence_penalty = envelope.presence_penalty,
-    max_tokens = envelope.max_tokens,
     stream = false,
     n = envelope.n or 1,
   }
+
+  if is_reasoning_model(model) then
+    -- Reasoning models reject max_tokens, and fix temperature/top_p/frequency_penalty/
+    -- presence_penalty at their own defaults; sending non-default values 400s.
+    request_body.max_completion_tokens = envelope.max_tokens
+    if type(config.reasoning_effort) == "string" and config.reasoning_effort ~= "" then
+      request_body.reasoning_effort = config.reasoning_effort
+    end
+    if type(config.verbosity) == "string" and config.verbosity ~= "" then
+      request_body.verbosity = config.verbosity
+    end
+  else
+    request_body.temperature = envelope.temperature
+    request_body.top_p = envelope.top_p
+    request_body.frequency_penalty = envelope.frequency_penalty
+    request_body.presence_penalty = envelope.presence_penalty
+    request_body.max_tokens = envelope.max_tokens
+  end
 
   request.send({
     url = endpoint,
@@ -121,6 +142,23 @@ function M:validate_config(config)
   -- Validate generate
   if config.generate and (type(config.generate) ~= "number" or config.generate < 1 or config.generate > 5) then
     table.insert(errors, "generate must be a number between 1 and 5")
+  end
+
+  -- Validate reasoning_effort (only used for gpt-5-family reasoning models)
+  if
+    config.reasoning_effort ~= nil and (type(config.reasoning_effort) ~= "string" or config.reasoning_effort == "")
+  then
+    table.insert(errors, "reasoning_effort must be a non-empty string")
+  end
+
+  -- Validate verbosity (only used for gpt-5-family reasoning models)
+  if
+    config.verbosity ~= nil
+    and config.verbosity ~= "low"
+    and config.verbosity ~= "medium"
+    and config.verbosity ~= "high"
+  then
+    table.insert(errors, "verbosity must be one of: low, medium, high")
   end
 
   -- Validate API key availability

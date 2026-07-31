@@ -22,9 +22,11 @@ M.defaults = {
       enabled = true, -- Enable/disable this provider
       api_key = nil, -- API key (nil = use environment variables)
       endpoint = nil, -- API endpoint (nil = use default: https://api.openai.com/v1/chat/completions)
-      model = "gpt-4.1-nano", -- OpenAI model to use
+      model = "gpt-5.6-luna", -- OpenAI model to use
       max_length = 50, -- Maximum commit message length
       generate = 1, -- Number of commit message options to generate (1-5)
+      reasoning_effort = nil, -- Only used for gpt-5-family reasoning models (e.g. gpt-5.6-luna). e.g. none|low|medium|high
+      verbosity = nil, -- Only used for gpt-5-family reasoning models: low|medium|high
       -- Advanced OpenAI options
       temperature = 0.7, -- Sampling temperature (0-2)
       top_p = 1, -- Nucleus sampling parameter

@@ -76,6 +76,8 @@ describe("openai provider", function()
       assert.equals(0.9, body.top_p)
       assert.equals("S", body.messages[1].content)
       assert.equals("U", body.messages[2].content)
+      assert.equals(100, body.max_tokens)
+      assert.is_nil(body.max_completion_tokens)
 
       request.send = orig_send
     end)
@@ -115,6 +117,81 @@ describe("openai provider", function()
       assert.is_string(err)
       assert.is_truthy(err:match("bad request"))
       request.send = orig_send
+    end)
+
+    it("uses max_completion_tokens and omits temperature/top_p/penalties for a reasoning model", function()
+      local request = require("aicommits.request")
+      local orig_send = request.send
+      local captured
+      request.send = function(send_opts, cb)
+        captured = send_opts
+        cb(nil, {
+          status = 200,
+          body = vim.json.encode({ choices = { { message = { content = "msg" } } } }),
+          headers = {},
+        })
+      end
+
+      require("aicommits.providers.openai"):generate_text({
+        system = "S",
+        user = "U",
+        model = "gpt-5.6-luna",
+        max_tokens = 150,
+        temperature = 0.3,
+        top_p = 0.9,
+        frequency_penalty = 0.1,
+        presence_penalty = 0.1,
+      }, { api_key = "k", model = "gpt-5.6-luna" }, function(_e, _t) end)
+
+      local body = vim.json.decode(captured.body)
+      assert.equals(150, body.max_completion_tokens)
+      assert.is_nil(body.max_tokens)
+      assert.is_nil(body.temperature)
+      assert.is_nil(body.top_p)
+      assert.is_nil(body.frequency_penalty)
+      assert.is_nil(body.presence_penalty)
+
+      request.send = orig_send
+    end)
+
+    it("sets top-level reasoning_effort and verbosity for a reasoning model", function()
+      local request = require("aicommits.request")
+      local orig_send = request.send
+      local captured
+      request.send = function(send_opts, cb)
+        captured = send_opts
+        cb(nil, {
+          status = 200,
+          body = vim.json.encode({ choices = { { message = { content = "msg" } } } }),
+          headers = {},
+        })
+      end
+
+      require("aicommits.providers.openai"):generate_text(
+        { system = "S", user = "U", model = "gpt-5.6-luna", max_tokens = 150 },
+        { api_key = "k", model = "gpt-5.6-luna", reasoning_effort = "low", verbosity = "medium" },
+        function(_e, _t) end
+      )
+
+      local body = vim.json.decode(captured.body)
+      assert.equals("low", body.reasoning_effort)
+      assert.equals("medium", body.verbosity)
+
+      request.send = orig_send
+    end)
+  end)
+
+  describe("validate_config()", function()
+    it("rejects verbosity outside low/medium/high", function()
+      local ok, errors = openai:validate_config({ api_key = "k", model = "gpt-5.6-luna", verbosity = "extreme" })
+      assert.is_false(ok)
+      assert.is_truthy(vim.tbl_contains(errors, "verbosity must be one of: low, medium, high"))
+    end)
+
+    it("accepts a valid reasoning_effort string", function()
+      local ok, errors = openai:validate_config({ api_key = "k", model = "gpt-5.6-luna", reasoning_effort = "medium" })
+      assert.is_true(ok)
+      assert.same({}, errors)
     end)
   end)
 end)
