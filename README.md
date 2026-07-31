@@ -219,7 +219,7 @@ require("aicommits").setup({
   providers = {
     anthropic = {
       enabled = true,
-      model = "claude-3-5-haiku-20241022",
+      model = "claude-haiku-4-5",
       max_length = 50,
       temperature = 0.7,
       max_tokens = 200,
@@ -307,7 +307,7 @@ require("aicommits").setup({
     anthropic = {
       enabled = false,         -- Enable/disable this provider
       api_key = nil,          -- API key (nil = use environment variables)
-      model = "claude-3-5-haiku-20241022", -- Claude model to use
+      model = "claude-haiku-4-5", -- Claude model to use
       max_length = 50,         -- Max characters in commit message
       temperature = 0.7,       -- Sampling temperature (0-1)
       max_tokens = 200,        -- Maximum tokens in response

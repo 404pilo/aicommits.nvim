@@ -292,7 +292,7 @@ describe("request config block", function()
     assert.is_true(req.backoff_jitter)
     assert.is_true(req.respect_retry_after)
     assert.equals(4, req.max_concurrency)
-    assert.same({ 408, 429, 500, 502, 503, 504 }, req.retry_on_status)
+    assert.same({ 408, 429, 500, 502, 503, 504, 529 }, req.retry_on_status)
   end)
 
   it("folds user-set large_diff.concurrency into request.max_concurrency", function()

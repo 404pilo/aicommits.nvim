@@ -34,7 +34,7 @@ describe("anthropic provider", function()
   describe("validate_config", function()
     it("accepts valid configuration", function()
       local valid, errors = anthropic:validate_config({
-        model = "claude-3-5-haiku-20241022",
+        model = "claude-haiku-4-5",
         api_key = "test-key",
       })
 
@@ -64,7 +64,7 @@ describe("anthropic provider", function()
 
     it("rejects invalid temperature (too high)", function()
       local valid, errors = anthropic:validate_config({
-        model = "claude-3-5-haiku-20241022",
+        model = "claude-haiku-4-5",
         api_key = "test-key",
         temperature = 1.5,
       })
@@ -75,7 +75,7 @@ describe("anthropic provider", function()
 
     it("rejects invalid temperature (negative)", function()
       local valid, errors = anthropic:validate_config({
-        model = "claude-3-5-haiku-20241022",
+        model = "claude-haiku-4-5",
         api_key = "test-key",
         temperature = -1,
       })
@@ -86,7 +86,7 @@ describe("anthropic provider", function()
 
     it("accepts temperature within valid range (0-1)", function()
       local valid, errors = anthropic:validate_config({
-        model = "claude-3-5-haiku-20241022",
+        model = "claude-haiku-4-5",
         api_key = "test-key",
         temperature = 1,
       })
@@ -97,7 +97,7 @@ describe("anthropic provider", function()
 
     it("rejects invalid max_length (negative)", function()
       local valid, errors = anthropic:validate_config({
-        model = "claude-3-5-haiku-20241022",
+        model = "claude-haiku-4-5",
         api_key = "test-key",
         max_length = -1,
       })
@@ -108,7 +108,7 @@ describe("anthropic provider", function()
 
     it("rejects invalid max_tokens", function()
       local valid, errors = anthropic:validate_config({
-        model = "claude-3-5-haiku-20241022",
+        model = "claude-haiku-4-5",
         api_key = "test-key",
         max_tokens = -1,
       })
@@ -122,7 +122,7 @@ describe("anthropic provider", function()
       vim.env.ANTHROPIC_API_KEY = nil
 
       local valid, errors = anthropic:validate_config({
-        model = "claude-3-5-haiku-20241022",
+        model = "claude-haiku-4-5",
       })
 
       assert.is_false(valid)
@@ -135,7 +135,7 @@ describe("anthropic provider", function()
       vim.env.ANTHROPIC_API_KEY = nil
 
       local valid, errors = anthropic:validate_config({
-        model = "claude-3-5-haiku-20241022",
+        model = "claude-haiku-4-5",
       })
 
       assert.is_true(valid)
@@ -149,7 +149,7 @@ describe("anthropic provider", function()
       vim.env.ANTHROPIC_API_KEY = "env-key-generic"
 
       local valid, errors = anthropic:validate_config({
-        model = "claude-3-5-haiku-20241022",
+        model = "claude-haiku-4-5",
       })
 
       assert.is_true(valid)
@@ -245,8 +245,8 @@ describe("anthropic provider", function()
 
       local err, texts
       require("aicommits.providers.anthropic"):generate_text(
-        { system = "S", user = "U", model = "claude-3-5-haiku-20241022", temperature = 0.5 },
-        { api_key = "k", model = "claude-3-5-haiku-20241022" },
+        { system = "S", user = "U", model = "claude-haiku-4-5", temperature = 0.5 },
+        { api_key = "k", model = "claude-haiku-4-5" },
         function(e, t)
           err, texts = e, t
         end
