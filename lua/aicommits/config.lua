@@ -70,6 +70,19 @@ M.defaults = {
       temperature = 0.7, -- Sampling temperature (0-1)
       max_tokens = 200, -- Maximum tokens in response
     },
+    -- Codex (ChatGPT OAuth) Configuration
+    -- Reads the local Codex CLI session at $CODEX_HOME/auth.json (read-only).
+    -- Requires the codex CLI and an active `codex login` session.
+    codex = {
+      enabled = false, -- Enable/disable this provider (disabled by default)
+      endpoint = nil, -- API endpoint (nil = ChatGPT Codex backend default)
+      model = "gpt-5.6-terra", -- Known-good models: gpt-5.6-terra, gpt-5.6-luna
+      reasoning_effort = "none", -- none|minimal|low|medium|high|xhigh|max
+      verbosity = "low", -- low|medium|high - the only supported length control
+      max_length = 50, -- Maximum commit message length
+      generate = 1, -- Must be 1; the backend gives no fan-out
+      request = { timeout_ms = 120000 }, -- Reasoning-model latency headroom
+    },
   },
 
   -- UI Configuration

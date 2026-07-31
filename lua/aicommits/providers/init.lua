@@ -120,6 +120,14 @@ function M.setup()
   else
     vim.notify("Failed to load Anthropic provider: " .. tostring(anthropic_provider), vim.log.levels.ERROR)
   end
+
+  -- Register Codex (ChatGPT OAuth) provider
+  local ok_codex, codex_provider = pcall(require, "aicommits.providers.codex")
+  if ok_codex then
+    M.register("codex", codex_provider)
+  else
+    vim.notify("Failed to load Codex provider: " .. tostring(codex_provider), vim.log.levels.ERROR)
+  end
 end
 
 return M

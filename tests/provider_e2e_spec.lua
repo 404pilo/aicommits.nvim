@@ -584,4 +584,122 @@ describe("provider system E2E", function()
       assert.is_true(caps.supports_streaming)
     end)
   end)
+
+  describe("Phase 12: Codex provider integration", function()
+    local tmp
+    local saved_home
+
+    before_each(function()
+      -- Clear package cache
+      package.loaded["aicommits.providers.codex"] = nil
+
+      -- codex's validate_config reads $CODEX_HOME/auth.json from disk, so this
+      -- block needs the same temp-CODEX_HOME fixture as tests/codex_spec.lua.
+      -- Without it, this suite would pass on a dev box with a real ~/.codex
+      -- session and fail in CI (or vice versa) -- never read the real ~/.codex.
+      tmp = vim.fn.tempname()
+      vim.fn.mkdir(tmp, "p")
+      saved_home = vim.env.CODEX_HOME
+      vim.env.CODEX_HOME = tmp
+      vim.fn.writefile({
+        '{"auth_mode":"chatgpt","tokens":{"access_token":"test-access-token","account_id":"test-account-id"}}',
+      }, tmp .. "/auth.json")
+
+      providers.setup()
+    end)
+
+    after_each(function()
+      vim.env.CODEX_HOME = saved_home
+      vim.fn.delete(tmp, "rf")
+    end)
+
+    it("registers codex provider on setup", function()
+      local provider_list = providers.list()
+      assert.is_table(provider_list)
+      assert.is_true(vim.tbl_contains(provider_list, "codex"))
+    end)
+
+    it("can retrieve registered codex provider", function()
+      local codex = providers.get("codex")
+      assert.is_not_nil(codex)
+      assert.equals("codex", codex.name)
+    end)
+
+    it("codex provider has required methods", function()
+      local codex = providers.get("codex")
+      assert.is_function(codex.generate_commit_message)
+      assert.is_function(codex.validate_config)
+      assert.is_function(codex.get_auth_headers)
+      assert.is_function(codex.get_capabilities)
+    end)
+
+    it("validates codex configuration correctly", function()
+      local codex = providers.get("codex")
+
+      -- Valid configuration
+      local valid, errors = codex:validate_config({
+        model = "gpt-5.6-terra",
+        generate = 1,
+        reasoning_effort = "none",
+        verbosity = "low",
+      })
+      assert.is_true(valid)
+      assert.equals(0, #errors)
+
+      -- Invalid: missing model
+      valid, errors = codex:validate_config({
+        generate = 1,
+        reasoning_effort = "none",
+        verbosity = "low",
+      })
+      assert.is_false(valid)
+      assert.is_true(#errors > 0)
+    end)
+
+    it("can use codex as active provider", function()
+      config.setup({
+        active_provider = "codex",
+        providers = {
+          codex = {
+            enabled = true,
+            model = "gpt-5.6-terra",
+          },
+        },
+      })
+
+      local provider, err = providers.get_active_provider()
+
+      assert.is_nil(err)
+      assert.is_not_nil(provider)
+      assert.equals("codex", provider.name)
+    end)
+
+    it("rejects disabled codex provider", function()
+      config.setup({
+        active_provider = "codex",
+        providers = {
+          codex = {
+            enabled = false,
+            model = "gpt-5.6-terra",
+          },
+        },
+      })
+
+      local provider, err = providers.get_active_provider()
+
+      assert.is_nil(provider)
+      assert.is_not_nil(err)
+      assert.matches("disabled", err)
+    end)
+
+    it("codex provider returns correct capabilities", function()
+      local codex = providers.get("codex")
+      local caps = codex:get_capabilities()
+
+      assert.is_table(caps)
+      assert.is_false(caps.supports_streaming)
+      assert.is_false(caps.supports_multiple_generations)
+      assert.equals(1, caps.max_generations)
+    end)
+  end)
 end)
