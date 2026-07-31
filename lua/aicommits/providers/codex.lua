@@ -219,7 +219,7 @@ function M:generate_text(envelope, config, callback)
       return
     end
 
-    local text, saw_completed = _parse_sse(result.body or "")
+    local text, saw_completed = _parse_sse(result and result.body or "")
     if not saw_completed or text:match("^%s*$") then
       callback("No commit messages were generated. Try again.", nil)
       return
