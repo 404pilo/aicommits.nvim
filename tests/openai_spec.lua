@@ -45,6 +45,66 @@ describe("openai provider", function()
       require("aicommits.http").post = orig_post
     end)
 
+    -- envelope.model overrides config.model per call (large_diff.summary_model does
+    -- exactly this), so validate_config -- which only ever sees config.model -- cannot
+    -- catch a summary model whose enum differs from the configured one.
+    it("rejects a per-call envelope.model whose enum does not accept the configured effort", function()
+      local request = require("aicommits.request")
+      local orig_send = request.send
+      local sent = false
+      request.send = function()
+        sent = true
+      end
+
+      local err
+      require("aicommits.providers.openai"):generate_text(
+        { system = "S", user = "U", model = "gpt-5-mini", max_tokens = 100 },
+        -- Valid for the configured model, invalid for the summary model.
+        { api_key = "k", model = "gpt-5.6-luna", reasoning_effort = "none", verbosity = "low" },
+        function(e)
+          err = e
+        end
+      )
+
+      request.send = orig_send
+
+      assert.is_false(sent, "must not spend a request the API is known to reject")
+      assert.is_truthy(err)
+      assert.is_truthy(err:find("gpt%-5%-mini"), "error should name the effective model, not the configured one")
+      assert.is_truthy(err:find("minimal"), "error should name the value this model wants instead")
+    end)
+
+    it("allows a per-call envelope.model whose enum does accept the configured effort", function()
+      local request = require("aicommits.request")
+      local orig_send = request.send
+      local captured
+      request.send = function(send_opts, cb)
+        captured = send_opts
+        cb(nil, {
+          status = 200,
+          body = vim.json.encode({ choices = { { message = { content = "sum" } } } }),
+          headers = {},
+        })
+      end
+
+      local err, texts
+      require("aicommits.providers.openai"):generate_text(
+        { system = "S", user = "U", model = "gpt-5.4-mini", max_tokens = 100 },
+        { api_key = "k", model = "gpt-5.6-luna", reasoning_effort = "none", verbosity = "low" },
+        function(e, t)
+          err, texts = e, t
+        end
+      )
+
+      request.send = orig_send
+
+      assert.is_nil(err)
+      assert.same({ "sum" }, texts)
+      local body = vim.json.decode(captured.body)
+      assert.equals("gpt-5.4-mini", body.model)
+      assert.equals("none", body.reasoning_effort)
+    end)
+
     it("calls request.send (not http.post) and maps n/top_p onto the body", function()
       local request = require("aicommits.request")
       local orig_send = request.send

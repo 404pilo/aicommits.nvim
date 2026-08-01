@@ -202,7 +202,11 @@ function M:generate_text(envelope, config, callback)
   end
 
   local endpoint = config.endpoint or "https://api.openai.com/v1/chat/completions"
-  local model = envelope.model or config.model or "gpt-4.1-nano"
+  -- Last-resort fallback only (both envelope.model and config.model unset; a config
+  -- without a model is already rejected by validate_config). Kept in sync with
+  -- config.defaults.providers.openai.model so the provider never silently runs a
+  -- different model than the documented default.
+  local model = envelope.model or config.model or "gpt-5.6-luna"
 
   local request_body = {
     model = model,
@@ -218,10 +222,28 @@ function M:generate_text(envelope, config, callback)
     -- Reasoning models reject max_tokens, and fix temperature/top_p/frequency_penalty/
     -- presence_penalty at their own defaults; sending non-default values 400s.
     request_body.max_completion_tokens = envelope.max_tokens
+
+    -- Re-check against the EFFECTIVE model, which validate_config could not see:
+    -- large_diff.summary_model overrides config.model per call (input/rich.lua), so
+    -- a summary model from a different generation than providers.openai.model gets
+    -- the same reasoning_effort/verbosity that were only validated against the
+    -- latter. Fail here with the actionable message instead of sending a request
+    -- the API is known to reject.
+    local rule = classify_model(model)
+
     if type(config.reasoning_effort) == "string" and config.reasoning_effort ~= "" then
+      if rule and not rule.reasoning_effort.set[config.reasoning_effort] then
+        callback(reasoning_effort_error(model, config.reasoning_effort, rule), nil)
+        return
+      end
       request_body.reasoning_effort = config.reasoning_effort
     end
+
     if type(config.verbosity) == "string" and config.verbosity ~= "" then
+      if rule and not rule.verbosity.set[config.verbosity] then
+        callback(unsupported_error("verbosity", model, config.verbosity, rule.verbosity), nil)
+        return
+      end
       request_body.verbosity = config.verbosity
     end
   else
