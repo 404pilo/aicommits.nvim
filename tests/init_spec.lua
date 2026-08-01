@@ -127,7 +127,7 @@ describe("init", function()
       -- Should merge with defaults, not replace
       local model = config.get("providers.openai.model")
       assert.is_not_nil(model)
-      assert.equals("gpt-4.1-nano", model) -- Default model
+      assert.equals("gpt-5.6-luna", model) -- Default model
 
       local max_length = config.get("providers.openai.max_length")
       assert.equals(100, max_length)

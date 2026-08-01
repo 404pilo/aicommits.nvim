@@ -27,9 +27,11 @@ describe("aicommits.config", function()
       config.setup({})
 
       assert.equals("openai", config.get("active_provider"))
-      assert.equals("gpt-4.1-nano", config.get("providers.openai.model"))
+      assert.equals("gpt-5.6-luna", config.get("providers.openai.model"))
       assert.equals(50, config.get("providers.openai.max_length"))
       assert.equals(1, config.get("providers.openai.generate"))
+      assert.equals("none", config.get("providers.openai.reasoning_effort"))
+      assert.equals("low", config.get("providers.openai.verbosity"))
       assert.equals(true, config.get("ui.use_custom_picker"))
     end)
 

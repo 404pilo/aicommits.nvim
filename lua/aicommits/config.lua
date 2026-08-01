@@ -22,15 +22,23 @@ M.defaults = {
       enabled = true, -- Enable/disable this provider
       api_key = nil, -- API key (nil = use environment variables)
       endpoint = nil, -- API endpoint (nil = use default: https://api.openai.com/v1/chat/completions)
-      model = "gpt-4.1-nano", -- OpenAI model to use
+      model = "gpt-5.6-luna", -- OpenAI model to use
       max_length = 50, -- Maximum commit message length
       generate = 1, -- Number of commit message options to generate (1-5)
+      -- Only used for gpt-5-family/o-series reasoning models. Valid values vary by
+      -- model generation (e.g. bare gpt-5 uses "minimal" where gpt-5.2+ uses "none"
+      -- for the same intent) -- see the reasoning_effort/verbosity table in README.md.
+      -- "none" is correct for the default model (gpt-5.6-luna); override this if you
+      -- switch to a bare gpt-5/gpt-5-mini/gpt-5-nano model.
+      reasoning_effort = "none", -- "none" emits zero reasoning tokens; fastest/cheapest for commit messages
+      verbosity = "low", -- Only used for gpt-5-family/o-series reasoning models; valid values vary by model (see README.md)
       -- Advanced OpenAI options
       temperature = 0.7, -- Sampling temperature (0-2)
       top_p = 1, -- Nucleus sampling parameter
       frequency_penalty = 0, -- Frequency penalty (-2 to 2)
       presence_penalty = 0, -- Presence penalty (-2 to 2)
       max_tokens = 200, -- Maximum tokens in response
+      request = { timeout_ms = 120000 }, -- Reasoning-model latency headroom
     },
     -- Google Vertex AI Configuration
     -- Requires gcloud CLI: https://cloud.google.com/sdk/install
@@ -76,8 +84,8 @@ M.defaults = {
     codex = {
       enabled = false, -- Enable/disable this provider (disabled by default)
       endpoint = nil, -- API endpoint (nil = ChatGPT Codex backend default)
-      model = "gpt-5.6-terra", -- Known-good models: gpt-5.6-terra, gpt-5.6-luna
-      reasoning_effort = "none", -- none|minimal|low|medium|high|xhigh|max
+      model = "gpt-5.6-terra", -- Known-good models: gpt-5.6-terra, gpt-5.6-luna, gpt-5.6-sol
+      reasoning_effort = "none", -- ChatGPT Codex backend enum (differs from openai provider): none|low|medium|high|xhigh|max
       verbosity = "low", -- low|medium|high - the only supported length control
       max_length = 50, -- Maximum commit message length
       generate = 1, -- Must be 1; the backend gives no fan-out

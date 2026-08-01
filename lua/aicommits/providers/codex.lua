@@ -22,9 +22,11 @@ local ORIGINATOR = "codex_cli_rs"
 local OPENAI_BETA = "responses_websockets=2026-02-06"
 local CODEX_CLI_VERSION = "0.146.0"
 
+-- ChatGPT Codex backend's real enum (confirmed via live 400 rejection message).
+-- Differs from the public Chat Completions API used by openai.lua, which rejects
+-- both minimal and max -- do not DRY this with that provider's table.
 local VALID_REASONING_EFFORTS = {
   none = true,
-  minimal = true,
   low = true,
   medium = true,
   high = true,
@@ -249,7 +251,7 @@ function M:validate_config(config)
   end
 
   if config.reasoning_effort ~= nil and not VALID_REASONING_EFFORTS[config.reasoning_effort] then
-    table.insert(errors, "reasoning_effort must be one of: none, minimal, low, medium, high, xhigh, max")
+    table.insert(errors, "reasoning_effort must be one of: none, low, medium, high, xhigh, max")
   end
 
   if config.verbosity ~= nil and not VALID_VERBOSITIES[config.verbosity] then

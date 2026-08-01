@@ -41,7 +41,7 @@ With custom config:
     require("aicommits").setup({
       providers = {
         openai = {
-          model = "gpt-4.1-nano",
+          model = "gpt-5.6-luna",
           max_length = 72,
           generate = 3,
         },
@@ -265,10 +265,12 @@ require("aicommits").setup({
       enabled = true,          -- Enable/disable this provider
       api_key = nil,           -- API key (nil = use environment variables)
       endpoint = nil,          -- Custom endpoint (nil = use default)
-      model = "gpt-4.1-nano",  -- Which model to use
+      model = "gpt-5.6-luna",  -- Which model to use (gpt-5-family/o-series models are treated as reasoning models)
       max_length = 50,         -- Max characters in commit message
       generate = 1,            -- Number of options (1-5)
-      -- Advanced options
+      reasoning_effort = "none",  -- Reasoning models only; valid values vary by model generation (see table below)
+      verbosity = "low",          -- Reasoning models only; valid values vary by model generation (see table below)
+      -- Advanced options (ignored for reasoning models; see note below)
       temperature = 0.7,       -- Sampling temperature (0-2)
       top_p = 1,              -- Nucleus sampling parameter
       frequency_penalty = 0,   -- Frequency penalty (-2 to 2)
@@ -362,13 +364,29 @@ require("aicommits").setup({
   active_provider = "openai",
   providers = {
     openai = {
-      model = "gpt-4.1-nano",      -- Use a different model
+      model = "gpt-5.6-luna",      -- Use a different model
       max_length = 72,      -- Longer commit messages
       generate = 3,         -- Generate 3 options to choose from
     },
   },
 })
 ```
+
+`reasoning_effort` and `verbosity` are optional and only take effect for gpt-5-family/o-series reasoning models like `gpt-5.6-luna`. For these models, `temperature`, `top_p`, `frequency_penalty`, and `presence_penalty` are ignored (fixed by the API), and `max_tokens` is sent as `max_completion_tokens` instead. Classic models like `gpt-4.1-nano` are unaffected and keep using all of the advanced options above.
+
+**`reasoning_effort`/`verbosity` valid values by model** (verified against the live public Chat Completions API; this is a different enum per model generation, and a different enum entirely from the Codex provider below):
+
+| Model | Valid `reasoning_effort` | Valid `verbosity` |
+|---|---|---|
+| `gpt-5`, `gpt-5-mini`, `gpt-5-nano` (no version decimal) | `minimal`, `low`, `medium`, `high` | `low`, `medium`, `high` |
+| `gpt-5.1` (any `-mini`/`-nano` suffix) | `none`, `low`, `medium`, `high` (no `xhigh`) | `low`, `medium`, `high` |
+| `gpt-5.2`, `5.4`, `5.5`, `5.6` incl. `5.6-luna`/`5.6-sol`/`5.6-terra` (any `-mini`/`-nano` suffix) | `none`, `low`, `medium`, `high`, `xhigh` | `low`, `medium`, `high` |
+| any `*-chat-latest` (overrides the base version's row) | `medium` only | `low`, `medium`, `high` |
+| `o3`, `o4-mini` | `low`, `medium`, `high`, `xhigh` | `medium` only |
+
+`none` and `minimal` are the same intent under different names: gpt-5-base calls it `minimal`, gpt-5.2+ renamed it to `none`. Passing the wrong generation's spelling for the model you configured is the most common mistake here — `validate_config` catches it and tells you which spelling to use instead.
+
+Only `gpt-5.6-luna`, `gpt-5.6-sol`, and `gpt-5.6-terra` are used elsewhere in this README/config, but the provider works with any gpt-5-family or `o3`/`o4-mini` model — override `reasoning_effort`/`verbosity` per the table above if you switch models. Models not listed in the table — including dated snapshot ids like `gpt-5-2025-08-07` — are accepted without local validation; the API is the source of truth for those, and its own error message names the valid set. That deliberately includes future releases — a `gpt-5.7` is *not* assumed to follow the `gpt-5.6` row, because a new model shipping a new effort value would otherwise be rejected locally for a value the API accepts. `*-codex` and `*-pro` models are **not** usable through this provider at all — they 404 on `/v1/chat/completions` (they're Responses-API-only, or deprecated).
 
 **Use a custom OpenAI-compatible endpoint:**
 ```lua
@@ -442,8 +460,8 @@ require("aicommits").setup({
     codex = {
       enabled = true, -- Opt in: disabled by default
       endpoint = nil, -- API endpoint (nil = ChatGPT Codex backend default)
-      model = "gpt-5.6-terra", -- Known-good models: gpt-5.6-terra, gpt-5.6-luna
-      reasoning_effort = "none", -- none|minimal|low|medium|high|xhigh|max
+      model = "gpt-5.6-terra", -- Known-good models: gpt-5.6-terra, gpt-5.6-luna, gpt-5.6-sol
+      reasoning_effort = "none", -- ChatGPT Codex backend enum (differs from openai provider): none|low|medium|high|xhigh|max
       verbosity = "low", -- low|medium|high - the only supported length control
       max_length = 50, -- Maximum commit message length
       generate = 1, -- Must be 1; the backend gives no fan-out
