@@ -380,13 +380,13 @@ require("aicommits").setup({
 |---|---|---|
 | `gpt-5`, `gpt-5-mini`, `gpt-5-nano` (no version decimal) | `minimal`, `low`, `medium`, `high` | `low`, `medium`, `high` |
 | `gpt-5.1` (any `-mini`/`-nano` suffix) | `none`, `low`, `medium`, `high` (no `xhigh`) | `low`, `medium`, `high` |
-| `gpt-5.2` and later, incl. `5.4`, `5.5`, `5.6-luna`/`5.6-sol`/`5.6-terra` (any `-mini`/`-nano` suffix) | `none`, `low`, `medium`, `high`, `xhigh` | `low`, `medium`, `high` |
+| `gpt-5.2`, `5.4`, `5.5`, `5.6` incl. `5.6-luna`/`5.6-sol`/`5.6-terra` (any `-mini`/`-nano` suffix) | `none`, `low`, `medium`, `high`, `xhigh` | `low`, `medium`, `high` |
 | any `*-chat-latest` (overrides the base version's row) | `medium` only | `low`, `medium`, `high` |
 | `o3`, `o4-mini` | `low`, `medium`, `high`, `xhigh` | `medium` only |
 
 `none` and `minimal` are the same intent under different names: gpt-5-base calls it `minimal`, gpt-5.2+ renamed it to `none`. Passing the wrong generation's spelling for the model you configured is the most common mistake here — `validate_config` catches it and tells you which spelling to use instead.
 
-Only `gpt-5.6-luna`, `gpt-5.6-sol`, and `gpt-5.6-terra` are used elsewhere in this README/config, but the provider works with any gpt-5-family or `o3`/`o4-mini` model — override `reasoning_effort`/`verbosity` per the table above if you switch models. Models not listed in the table (including future releases) are accepted without local validation; the API is the source of truth for those. `*-codex` and `*-pro` models are **not** usable through this provider at all — they 404 on `/v1/chat/completions` (they're Responses-API-only, or deprecated).
+Only `gpt-5.6-luna`, `gpt-5.6-sol`, and `gpt-5.6-terra` are used elsewhere in this README/config, but the provider works with any gpt-5-family or `o3`/`o4-mini` model — override `reasoning_effort`/`verbosity` per the table above if you switch models. Models not listed in the table are accepted without local validation; the API is the source of truth for those. That deliberately includes future releases — a `gpt-5.7` is *not* assumed to follow the `gpt-5.6` row, because a new model shipping a new effort value would otherwise be rejected locally for a value the API accepts. `*-codex` and `*-pro` models are **not** usable through this provider at all — they 404 on `/v1/chat/completions` (they're Responses-API-only, or deprecated).
 
 **Use a custom OpenAI-compatible endpoint:**
 ```lua

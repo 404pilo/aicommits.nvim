@@ -8,46 +8,63 @@ local M = base.new({
 })
 
 -- Verified reasoning_effort/verbosity rules per gpt-5-family/o-series model, from
--- live probing of the public Chat Completions API. Each rule carries an `order`
--- (for error messages) alongside the `set` (for lookup). See README.md for the
--- source table -- add a new row here only for a model that has actually been
--- probed; unmatched models are deliberately left unvalidated (see
--- classify_model below).
+-- live probing of the public Chat Completions API (README.md carries the same table
+-- for users). Add a row here only for a model that has actually been probed;
+-- unmatched models are deliberately left unvalidated (see classify_model below).
+--
+-- Each enum is authored ONCE as an ordered list and its lookup `set` is derived.
+-- Hand-writing both forms would let them drift, and a value present in `order` but
+-- missing from `set` would be advertised by the error message and rejected by the
+-- check at the same time.
+-- @param order string[] Valid values, in the order error messages should list them
+-- @return table { set, order }
+local function enum(order)
+  local set = {}
+  for _, value in ipairs(order) do
+    set[value] = true
+  end
+  return { set = set, order = order }
+end
+
+local FULL_VERBOSITY = enum({ "low", "medium", "high" })
+
 local GPT5_BARE_RULE = {
-  reasoning_effort = {
-    set = { minimal = true, low = true, medium = true, high = true },
-    order = { "minimal", "low", "medium", "high" },
-  },
-  verbosity = { set = { low = true, medium = true, high = true }, order = { "low", "medium", "high" } },
+  reasoning_effort = enum({ "minimal", "low", "medium", "high" }),
+  verbosity = FULL_VERBOSITY,
 }
 
 local GPT5_1_RULE = {
-  reasoning_effort = {
-    set = { none = true, low = true, medium = true, high = true },
-    order = { "none", "low", "medium", "high" },
-  },
-  verbosity = { set = { low = true, medium = true, high = true }, order = { "low", "medium", "high" } },
+  reasoning_effort = enum({ "none", "low", "medium", "high" }),
+  verbosity = FULL_VERBOSITY,
 }
 
-local GPT5_2_PLUS_RULE = {
-  reasoning_effort = {
-    set = { none = true, low = true, medium = true, high = true, xhigh = true },
-    order = { "none", "low", "medium", "high", "xhigh" },
-  },
-  verbosity = { set = { low = true, medium = true, high = true }, order = { "low", "medium", "high" } },
+local GPT5_2_TO_6_RULE = {
+  reasoning_effort = enum({ "none", "low", "medium", "high", "xhigh" }),
+  verbosity = FULL_VERBOSITY,
 }
 
 local GPT5_CHAT_LATEST_RULE = {
-  reasoning_effort = { set = { medium = true }, order = { "medium" } },
-  verbosity = { set = { low = true, medium = true, high = true }, order = { "low", "medium", "high" } },
+  reasoning_effort = enum({ "medium" }),
+  verbosity = FULL_VERBOSITY,
 }
 
 local O_SERIES_RULE = {
-  reasoning_effort = {
-    set = { low = true, medium = true, high = true, xhigh = true },
-    order = { "low", "medium", "high", "xhigh" },
-  },
-  verbosity = { set = { medium = true }, order = { "medium" } },
+  reasoning_effort = enum({ "low", "medium", "high", "xhigh" }),
+  verbosity = enum({ "medium" }),
+}
+
+-- Which rule each PROBED gpt-5.N minor version maps to. Keys are the digit as it
+-- appears in the model name; "0" is the sentinel for no version decimal at all
+-- (bare gpt-5, gpt-5-mini, gpt-5-nano). Absent keys are deliberate: "3" because
+-- bare gpt-5.3 does not exist on this endpoint (only gpt-5.3-chat-latest, handled
+-- by the suffix override), and 7-9 because they do not exist yet.
+local PROBED_MINOR_RULES = {
+  ["0"] = GPT5_BARE_RULE,
+  ["1"] = GPT5_1_RULE,
+  ["2"] = GPT5_2_TO_6_RULE,
+  ["4"] = GPT5_2_TO_6_RULE,
+  ["5"] = GPT5_2_TO_6_RULE,
+  ["6"] = GPT5_2_TO_6_RULE,
 }
 
 -- Suffixes verified not to change a gpt-5.N row's valid values, relative to the
@@ -97,54 +114,45 @@ local function classify_model(model)
     return nil
   end
 
-  local minor_num = tonumber(minor)
-  if minor_num == 0 then
-    return GPT5_BARE_RULE
-  elseif minor_num == 1 then
-    return GPT5_1_RULE
-  elseif minor_num == 3 then
-    -- Bare gpt-5.3 does not exist on this endpoint (only gpt-5.3-chat-latest,
-    -- already handled above); don't guess a row for it.
-    return nil
-  else
-    return GPT5_2_PLUS_RULE
-  end
+  -- Keyed by the minor version actually probed, NOT by a ">= 2" range. A future
+  -- gpt-5.7 that OpenAI ships with a new effort value would match a range test and
+  -- get that value spuriously rejected -- exactly the stale-table failure this
+  -- provider is built to avoid. Unprobed minors (3, and everything past 6) fall
+  -- through to nil and are left to the API. Add a row here only after probing.
+  return PROBED_MINOR_RULES[minor]
 end
 
--- Build an actionable "reasoning_effort not supported" error, calling out the
--- none/minimal naming split across model generations since it's the single
--- most confusing cell in the table.
+-- Build an actionable "<field> not supported by this model" error.
+-- @param field string Config key name
+-- @param model string
+-- @param value string
+-- @param field_enum table Enum returned by enum()
+-- @return string
+local function unsupported_error(field, model, value, field_enum)
+  return string.format(
+    '%s "%s" is not supported by model "%s". Supported values: %s.',
+    field,
+    value,
+    model,
+    table.concat(field_enum.order, ", ")
+  )
+end
+
+-- As unsupported_error, plus the none/minimal naming split across model
+-- generations -- the single most confusing cell in the table, and reachable
+-- from a default the user never typed.
 -- @param model string
 -- @param value string
 -- @param rule table Rule returned by classify_model
 -- @return string
 local function reasoning_effort_error(model, value, rule)
-  local msg = string.format(
-    'reasoning_effort "%s" is not supported by model "%s". Supported values: %s.',
-    value,
-    model,
-    table.concat(rule.reasoning_effort.order, ", ")
-  )
+  local msg = unsupported_error("reasoning_effort", model, value, rule.reasoning_effort)
   if value == "none" and rule.reasoning_effort.set.minimal then
     msg = msg .. ' ("none" is the gpt-5.2+ spelling of "minimal" -- set reasoning_effort = "minimal" for this model.)'
   elseif value == "minimal" and rule.reasoning_effort.set.none then
     msg = msg .. ' ("minimal" is the gpt-5-base spelling of "none" -- set reasoning_effort = "none" for this model.)'
   end
   return msg
-end
-
--- Build an actionable "verbosity not supported" error.
--- @param model string
--- @param value string
--- @param rule table Rule returned by classify_model
--- @return string
-local function verbosity_error(model, value, rule)
-  return string.format(
-    'verbosity "%s" is not supported by model "%s". Supported values: %s.',
-    value,
-    model,
-    table.concat(rule.verbosity.order, ", ")
-  )
 end
 
 -- Get OpenAI API key from configuration or environment variables
@@ -319,7 +327,7 @@ function M:validate_config(config)
     if type(config.verbosity) ~= "string" or config.verbosity == "" then
       table.insert(errors, "verbosity must be a non-empty string")
     elseif rule and not rule.verbosity.set[config.verbosity] then
-      table.insert(errors, verbosity_error(config.model, config.verbosity, rule))
+      table.insert(errors, unsupported_error("verbosity", config.model, config.verbosity, rule.verbosity))
     end
   end
 

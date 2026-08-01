@@ -367,7 +367,10 @@ describe("openai provider", function()
       it(
         "accepts any non-empty reasoning_effort/verbosity for an unrecognized model (permissiveness guarantee)",
         function()
-          for _, model in ipairs({ "gpt-6-whatever", "o5-mini", "o3-mini", "gpt-5.3" }) do
+          -- gpt-5.7/5.8 are NOT assumed to inherit the gpt-5.6 row: if OpenAI ships a
+          -- new effort value with a new minor version, forward-matching would reject
+          -- locally a value the API accepts. Unprobed minors stay permissive.
+          for _, model in ipairs({ "gpt-6-whatever", "o5-mini", "o3-mini", "gpt-5.3", "gpt-5.7", "gpt-5.8-mini" }) do
             local ok = openai:validate_config({
               api_key = "k",
               model = model,
