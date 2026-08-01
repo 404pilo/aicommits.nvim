@@ -268,8 +268,8 @@ require("aicommits").setup({
       model = "gpt-5.6-luna",  -- Which model to use (gpt-5-family/o-series models are treated as reasoning models)
       max_length = 50,         -- Max characters in commit message
       generate = 1,            -- Number of options (1-5)
-      reasoning_effort = nil,  -- Reasoning models only (public API): none|low|medium|high|xhigh
-      verbosity = nil,         -- Reasoning models only: low|medium|high
+      reasoning_effort = "none",  -- Reasoning models only (public API): none|low|medium|high|xhigh
+      verbosity = "low",          -- Reasoning models only: low|medium|high
       -- Advanced options (ignored for reasoning models; see note below)
       temperature = 0.7,       -- Sampling temperature (0-2)
       top_p = 1,              -- Nucleus sampling parameter
@@ -372,7 +372,7 @@ require("aicommits").setup({
 })
 ```
 
-`reasoning_effort` (`none`/`low`/`medium`/`high`/`xhigh`) and `verbosity` (`low`/`medium`/`high`) are optional and only take effect for gpt-5-family/o-series reasoning models like `gpt-5.6-luna`. For these models, `temperature`, `top_p`, `frequency_penalty`, and `presence_penalty` are ignored (fixed by the API), and `max_tokens` is sent as `max_completion_tokens` instead. Classic models like `gpt-4.1-nano` are unaffected and keep using all of the advanced options above. Note this is a different enum than the Codex provider below (`minimal`/`max` are Codex-only and are rejected by the public API).
+`reasoning_effort` (`none`/`low`/`medium`/`high`/`xhigh`) and `verbosity` (`low`/`medium`/`high`) are optional and only take effect for gpt-5-family/o-series reasoning models like `gpt-5.6-luna`. For these models, `temperature`, `top_p`, `frequency_penalty`, and `presence_penalty` are ignored (fixed by the API), and `max_tokens` is sent as `max_completion_tokens` instead. Classic models like `gpt-4.1-nano` are unaffected and keep using all of the advanced options above. Note this is a different enum than the Codex provider below: the public API rejects `max` (Codex-only), while `minimal` is rejected by both providers entirely.
 
 **Use a custom OpenAI-compatible endpoint:**
 ```lua
@@ -446,8 +446,8 @@ require("aicommits").setup({
     codex = {
       enabled = true, -- Opt in: disabled by default
       endpoint = nil, -- API endpoint (nil = ChatGPT Codex backend default)
-      model = "gpt-5.6-terra", -- Known-good models: gpt-5.6-terra, gpt-5.6-luna
-      reasoning_effort = "none", -- none|minimal|low|medium|high|xhigh|max
+      model = "gpt-5.6-terra", -- Known-good models: gpt-5.6-terra, gpt-5.6-luna, gpt-5.6-sol
+      reasoning_effort = "none", -- ChatGPT Codex backend enum (differs from openai provider): none|low|medium|high|xhigh|max
       verbosity = "low", -- low|medium|high - the only supported length control
       max_length = 50, -- Maximum commit message length
       generate = 1, -- Must be 1; the backend gives no fan-out

@@ -26,10 +26,10 @@ M.defaults = {
       max_length = 50, -- Maximum commit message length
       generate = 1, -- Number of commit message options to generate (1-5)
       -- Only used for gpt-5-family reasoning models (e.g. gpt-5.6-luna). Public Chat
-      -- Completions API values: none|low|medium|high|xhigh (nil = let the API pick its
-      -- own default). Do not reuse codex's minimal/max here; the public API rejects them.
-      reasoning_effort = nil,
-      verbosity = nil, -- Only used for gpt-5-family reasoning models: low|medium|high
+      -- Completions API values: none|low|medium|high|xhigh. Do not reuse codex's
+      -- minimal/max here; the public API rejects them.
+      reasoning_effort = "none", -- "none" emits zero reasoning tokens; fastest/cheapest for commit messages
+      verbosity = "low", -- Only used for gpt-5-family reasoning models: low|medium|high
       -- Advanced OpenAI options
       temperature = 0.7, -- Sampling temperature (0-2)
       top_p = 1, -- Nucleus sampling parameter
@@ -82,8 +82,8 @@ M.defaults = {
     codex = {
       enabled = false, -- Enable/disable this provider (disabled by default)
       endpoint = nil, -- API endpoint (nil = ChatGPT Codex backend default)
-      model = "gpt-5.6-terra", -- Known-good models: gpt-5.6-terra, gpt-5.6-luna
-      reasoning_effort = "none", -- none|minimal|low|medium|high|xhigh|max
+      model = "gpt-5.6-terra", -- Known-good models: gpt-5.6-terra, gpt-5.6-luna, gpt-5.6-sol
+      reasoning_effort = "none", -- ChatGPT Codex backend enum (differs from openai provider): none|low|medium|high|xhigh|max
       verbosity = "low", -- low|medium|high - the only supported length control
       max_length = 50, -- Maximum commit message length
       generate = 1, -- Must be 1; the backend gives no fan-out

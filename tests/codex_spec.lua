@@ -427,9 +427,9 @@ describe("codex provider", function()
       assert.is_true(valid)
     end)
 
-    it("accepts each of the 7 reasoning efforts and rejects an out-of-enum value", function()
+    it("accepts each of the 6 reasoning efforts and rejects an out-of-enum value", function()
       local cfg = base_valid_config()
-      for _, effort in ipairs({ "none", "minimal", "low", "medium", "high", "xhigh", "max" }) do
+      for _, effort in ipairs({ "none", "low", "medium", "high", "xhigh", "max" }) do
         cfg.reasoning_effort = effort
         local valid, _errors = codex:validate_config(cfg)
         assert.is_true(valid, "expected effort '" .. effort .. "' to be valid")
@@ -439,6 +439,22 @@ describe("codex provider", function()
       local valid, errors = codex:validate_config(cfg)
       assert.is_false(valid)
       assert.is_true(#errors > 0)
+    end)
+
+    it("rejects 'minimal' (invalid on this backend; also invalid on the openai provider)", function()
+      local cfg = base_valid_config()
+      cfg.reasoning_effort = "minimal"
+      local valid, errors = codex:validate_config(cfg)
+      assert.is_false(valid)
+      assert.is_true(#errors > 0)
+    end)
+
+    it("accepts 'max' (Codex-only value, rejected by the openai provider)", function()
+      local cfg = base_valid_config()
+      cfg.reasoning_effort = "max"
+      local valid, errors = codex:validate_config(cfg)
+      assert.is_true(valid)
+      assert.equals(0, #errors)
     end)
 
     it("rejects verbosity = 'verbose'", function()

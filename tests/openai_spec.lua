@@ -209,6 +209,34 @@ describe("openai provider", function()
       request.send = orig_send
     end)
 
+    it("never sends reasoning_effort/verbosity for a non-reasoning model even if configured", function()
+      local request = require("aicommits.request")
+      local orig_send = request.send
+      local captured
+      request.send = function(send_opts, cb)
+        captured = send_opts
+        cb(nil, {
+          status = 200,
+          body = vim.json.encode({ choices = { { message = { content = "msg" } } } }),
+          headers = {},
+        })
+      end
+
+      require("aicommits.providers.openai"):generate_text(
+        { system = "S", user = "U", model = "gpt-4.1-nano", max_tokens = 100 },
+        { api_key = "k", model = "gpt-4.1-nano", reasoning_effort = "none", verbosity = "low" },
+        function(_e, _t) end
+      )
+
+      local body = vim.json.decode(captured.body)
+      assert.is_nil(body.reasoning_effort)
+      assert.is_nil(body.verbosity)
+      assert.is_not_nil(body.max_tokens)
+      assert.is_nil(body.max_completion_tokens)
+
+      request.send = orig_send
+    end)
+
     it("filters out empty/whitespace-only choices while keeping non-empty ones", function()
       local request = require("aicommits.request")
       local orig_send = request.send
@@ -254,7 +282,7 @@ describe("openai provider", function()
       assert.same({}, errors)
     end)
 
-    it("rejects codex-only reasoning_effort values (minimal, max)", function()
+    it("rejects reasoning_effort values invalid on the public API (minimal, max)", function()
       for _, value in ipairs({ "minimal", "max" }) do
         local ok, errors = openai:validate_config({ api_key = "k", model = "gpt-5.6-luna", reasoning_effort = value })
         assert.is_false(ok)
