@@ -25,11 +25,13 @@ M.defaults = {
       model = "gpt-5.6-luna", -- OpenAI model to use
       max_length = 50, -- Maximum commit message length
       generate = 1, -- Number of commit message options to generate (1-5)
-      -- Only used for gpt-5-family reasoning models (e.g. gpt-5.6-luna). Public Chat
-      -- Completions API values: none|low|medium|high|xhigh. Do not reuse codex's
-      -- minimal/max here; the public API rejects them.
+      -- Only used for gpt-5-family/o-series reasoning models. Valid values vary by
+      -- model generation (e.g. bare gpt-5 uses "minimal" where gpt-5.2+ uses "none"
+      -- for the same intent) -- see the reasoning_effort/verbosity table in README.md.
+      -- "none" is correct for the default model (gpt-5.6-luna); override this if you
+      -- switch to a bare gpt-5/gpt-5-mini/gpt-5-nano model.
       reasoning_effort = "none", -- "none" emits zero reasoning tokens; fastest/cheapest for commit messages
-      verbosity = "low", -- Only used for gpt-5-family reasoning models: low|medium|high
+      verbosity = "low", -- Only used for gpt-5-family/o-series reasoning models; valid values vary by model (see README.md)
       -- Advanced OpenAI options
       temperature = 0.7, -- Sampling temperature (0-2)
       top_p = 1, -- Nucleus sampling parameter

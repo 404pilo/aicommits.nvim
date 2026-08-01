@@ -268,8 +268,8 @@ require("aicommits").setup({
       model = "gpt-5.6-luna",  -- Which model to use (gpt-5-family/o-series models are treated as reasoning models)
       max_length = 50,         -- Max characters in commit message
       generate = 1,            -- Number of options (1-5)
-      reasoning_effort = "none",  -- Reasoning models only (public API): none|low|medium|high|xhigh
-      verbosity = "low",          -- Reasoning models only: low|medium|high
+      reasoning_effort = "none",  -- Reasoning models only; valid values vary by model generation (see table below)
+      verbosity = "low",          -- Reasoning models only; valid values vary by model generation (see table below)
       -- Advanced options (ignored for reasoning models; see note below)
       temperature = 0.7,       -- Sampling temperature (0-2)
       top_p = 1,              -- Nucleus sampling parameter
@@ -372,7 +372,21 @@ require("aicommits").setup({
 })
 ```
 
-`reasoning_effort` (`none`/`low`/`medium`/`high`/`xhigh`) and `verbosity` (`low`/`medium`/`high`) are optional and only take effect for gpt-5-family/o-series reasoning models like `gpt-5.6-luna`. For these models, `temperature`, `top_p`, `frequency_penalty`, and `presence_penalty` are ignored (fixed by the API), and `max_tokens` is sent as `max_completion_tokens` instead. Classic models like `gpt-4.1-nano` are unaffected and keep using all of the advanced options above. Note this is a different enum than the Codex provider below: the public API rejects `max` (Codex-only), while `minimal` is rejected by both providers entirely.
+`reasoning_effort` and `verbosity` are optional and only take effect for gpt-5-family/o-series reasoning models like `gpt-5.6-luna`. For these models, `temperature`, `top_p`, `frequency_penalty`, and `presence_penalty` are ignored (fixed by the API), and `max_tokens` is sent as `max_completion_tokens` instead. Classic models like `gpt-4.1-nano` are unaffected and keep using all of the advanced options above.
+
+**`reasoning_effort`/`verbosity` valid values by model** (verified against the live public Chat Completions API; this is a different enum per model generation, and a different enum entirely from the Codex provider below):
+
+| Model | Valid `reasoning_effort` | Valid `verbosity` |
+|---|---|---|
+| `gpt-5`, `gpt-5-mini`, `gpt-5-nano` (no version decimal) | `minimal`, `low`, `medium`, `high` | `low`, `medium`, `high` |
+| `gpt-5.1` (any `-mini`/`-nano` suffix) | `none`, `low`, `medium`, `high` (no `xhigh`) | `low`, `medium`, `high` |
+| `gpt-5.2` and later, incl. `5.4`, `5.5`, `5.6-luna`/`5.6-sol`/`5.6-terra` (any `-mini`/`-nano` suffix) | `none`, `low`, `medium`, `high`, `xhigh` | `low`, `medium`, `high` |
+| any `*-chat-latest` (overrides the base version's row) | `medium` only | `low`, `medium`, `high` |
+| `o3`, `o4-mini` | `low`, `medium`, `high`, `xhigh` | `medium` only |
+
+`none` and `minimal` are the same intent under different names: gpt-5-base calls it `minimal`, gpt-5.2+ renamed it to `none`. Passing the wrong generation's spelling for the model you configured is the most common mistake here — `validate_config` catches it and tells you which spelling to use instead.
+
+Only `gpt-5.6-luna`, `gpt-5.6-sol`, and `gpt-5.6-terra` are used elsewhere in this README/config, but the provider works with any gpt-5-family or `o3`/`o4-mini` model — override `reasoning_effort`/`verbosity` per the table above if you switch models. Models not listed in the table (including future releases) are accepted without local validation; the API is the source of truth for those. `*-codex` and `*-pro` models are **not** usable through this provider at all — they 404 on `/v1/chat/completions` (they're Responses-API-only, or deprecated).
 
 **Use a custom OpenAI-compatible endpoint:**
 ```lua

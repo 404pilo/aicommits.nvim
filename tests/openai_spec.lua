@@ -270,10 +270,16 @@ describe("openai provider", function()
   end)
 
   describe("validate_config()", function()
-    it("rejects verbosity outside low/medium/high", function()
-      local ok, errors = openai:validate_config({ api_key = "k", model = "gpt-5.6-luna", verbosity = "extreme" })
+    it("rejects verbosity that is not a non-empty string regardless of model", function()
+      local ok, errors = openai:validate_config({ api_key = "k", model = "gpt-5.6-luna", verbosity = "" })
       assert.is_false(ok)
-      assert.is_truthy(vim.tbl_contains(errors, "verbosity must be one of: low, medium, high"))
+      assert.is_truthy(vim.tbl_contains(errors, "verbosity must be a non-empty string"))
+    end)
+
+    it("rejects reasoning_effort that is not a non-empty string regardless of model", function()
+      local ok, errors = openai:validate_config({ api_key = "k", model = "gpt-5.6-luna", reasoning_effort = "" })
+      assert.is_false(ok)
+      assert.is_truthy(vim.tbl_contains(errors, "reasoning_effort must be a non-empty string"))
     end)
 
     it("accepts a valid reasoning_effort string", function()
@@ -282,20 +288,110 @@ describe("openai provider", function()
       assert.same({}, errors)
     end)
 
-    it("rejects reasoning_effort values invalid on the public API (minimal, max)", function()
-      for _, value in ipairs({ "minimal", "max" }) do
-        local ok, errors = openai:validate_config({ api_key = "k", model = "gpt-5.6-luna", reasoning_effort = value })
-        assert.is_false(ok)
-        assert.is_truthy(vim.tbl_contains(errors, "reasoning_effort must be one of: none, low, medium, high, xhigh"))
-      end
-    end)
+    describe("model-aware reasoning_effort/verbosity rules", function()
+      it("bare gpt-5 (no version decimal): accepts minimal, rejects none", function()
+        for _, model in ipairs({ "gpt-5", "gpt-5-mini", "gpt-5-nano" }) do
+          local ok = openai:validate_config({ api_key = "k", model = model, reasoning_effort = "minimal" })
+          assert.is_true(ok, model .. " should accept minimal")
 
-    it("accepts all valid public-API reasoning_effort values", function()
-      for _, value in ipairs({ "none", "low", "medium", "high", "xhigh" }) do
-        local ok, errors = openai:validate_config({ api_key = "k", model = "gpt-5.6-luna", reasoning_effort = value })
+          local ok2, errors2 = openai:validate_config({ api_key = "k", model = model, reasoning_effort = "none" })
+          assert.is_false(ok2, model .. " should reject none")
+          assert.is_truthy(errors2[1]:match('"minimal" for this model'))
+        end
+      end)
+
+      it("gpt-5.1: accepts none, rejects xhigh (the cell that distinguishes 5.1 from 5.2+)", function()
+        local ok = openai:validate_config({ api_key = "k", model = "gpt-5.1", reasoning_effort = "none" })
         assert.is_true(ok)
-        assert.same({}, errors)
-      end
+
+        local ok2, errors2 = openai:validate_config({ api_key = "k", model = "gpt-5.1", reasoning_effort = "xhigh" })
+        assert.is_false(ok2)
+        assert.is_truthy(errors2[1]:match('reasoning_effort "xhigh" is not supported by model "gpt%-5%.1"'))
+      end)
+
+      it("gpt-5.1-mini follows the 5.1 row (suffix does not change the base version's rule)", function()
+        local ok = openai:validate_config({ api_key = "k", model = "gpt-5.1-mini", reasoning_effort = "none" })
+        assert.is_true(ok)
+        local ok2 = openai:validate_config({ api_key = "k", model = "gpt-5.1-mini", reasoning_effort = "xhigh" })
+        assert.is_false(ok2)
+      end)
+
+      it("gpt-5.2+ (incl. 5.6-luna/sol/terra): rejects minimal, accepts none/xhigh", function()
+        for _, model in ipairs({ "gpt-5.2", "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra" }) do
+          local ok, errors = openai:validate_config({ api_key = "k", model = model, reasoning_effort = "minimal" })
+          assert.is_false(ok, model .. " should reject minimal")
+          assert.is_truthy(errors[1]:match('"none" for this model'))
+
+          for _, value in ipairs({ "none", "low", "medium", "high", "xhigh" }) do
+            local ok2 = openai:validate_config({ api_key = "k", model = model, reasoning_effort = value })
+            assert.is_true(ok2, model .. " should accept " .. value)
+          end
+        end
+      end)
+
+      it("gpt-5.4-mini follows the 5.4 row (suffix must not break base-version matching)", function()
+        local ok = openai:validate_config({ api_key = "k", model = "gpt-5.4-mini", reasoning_effort = "xhigh" })
+        assert.is_true(ok)
+        local ok2 = openai:validate_config({ api_key = "k", model = "gpt-5.4-mini", reasoning_effort = "minimal" })
+        assert.is_false(ok2)
+      end)
+
+      it(
+        "*-chat-latest overrides the base version to effort=medium only, even when the base version would allow more",
+        function()
+          -- gpt-5.2-chat-latest: the 5.2 base version alone would accept "none", but the
+          -- -chat-latest suffix rule must win.
+          local ok, errors =
+            openai:validate_config({ api_key = "k", model = "gpt-5.2-chat-latest", reasoning_effort = "none" })
+          assert.is_false(ok)
+          assert.is_truthy(errors[1]:match("Supported values: medium%."))
+
+          local ok2 =
+            openai:validate_config({ api_key = "k", model = "gpt-5.2-chat-latest", reasoning_effort = "medium" })
+          assert.is_true(ok2)
+        end
+      )
+
+      it("o3 rejects verbosity outside medium, accepts medium; accepts xhigh reasoning_effort", function()
+        local ok, errors = openai:validate_config({ api_key = "k", model = "o3", verbosity = "low" })
+        assert.is_false(ok)
+        assert.is_truthy(errors[1]:match('verbosity "low" is not supported by model "o3"%. Supported values: medium%.'))
+
+        local ok2 = openai:validate_config({ api_key = "k", model = "o3", verbosity = "medium" })
+        assert.is_true(ok2)
+
+        local ok3 = openai:validate_config({ api_key = "k", model = "o3", reasoning_effort = "xhigh" })
+        assert.is_true(ok3)
+      end)
+
+      it(
+        "accepts any non-empty reasoning_effort/verbosity for an unrecognized model (permissiveness guarantee)",
+        function()
+          for _, model in ipairs({ "gpt-6-whatever", "o5-mini", "o3-mini", "gpt-5.3" }) do
+            local ok = openai:validate_config({
+              api_key = "k",
+              model = model,
+              reasoning_effort = "definitely-not-a-real-value",
+              verbosity = "also-not-real",
+            })
+            assert.is_true(ok, model .. " should accept any non-empty value (unrecognized model)")
+          end
+        end
+      )
+
+      it(
+        "gpt-5.6-luna with the config.lua defaults (reasoning_effort=none, verbosity=low) still validates clean",
+        function()
+          local ok, errors = openai:validate_config({
+            api_key = "k",
+            model = "gpt-5.6-luna",
+            reasoning_effort = "none",
+            verbosity = "low",
+          })
+          assert.is_true(ok)
+          assert.same({}, errors)
+        end
+      )
     end)
   end)
 end)
